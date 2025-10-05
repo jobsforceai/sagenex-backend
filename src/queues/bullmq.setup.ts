@@ -1,3 +1,4 @@
+/*
 import { Queue, Worker } from 'bullmq';
 import Redis from 'ioredis';
 
@@ -16,3 +17,4 @@ export const exampleQueue = new Queue('exampleQueue', { connection });
 export const setupWorker = (processorPath: string) => {
   return new Worker('exampleQueue', processorPath, { connection });
 };
+*/
