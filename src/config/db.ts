@@ -2,17 +2,12 @@ import mongoose from 'mongoose';
 
 const connectDB = async () => {
   try {
-    // Use Docker-internal hostname if running in container, otherwise use localhost for local dev
-    const mongoHost = process.env.IS_DOCKER === 'true' ? 'mongodb' : 'localhost';
-    const mongoPort = process.env.IS_DOCKER === 'true' ? '27017' : '27018';
-    
-    const mongoURI = `mongodb://${mongoHost}:${mongoPort}/segnex-backend`;
-    
+    const mongoURI = process.env.MONGO_URI;
     if (!mongoURI) {
-      throw new Error('MONGO_URI could not be constructed');
+      throw new Error('MONGO_URI is not defined in the environment variables. Please set it.');
     }
     await mongoose.connect(mongoURI);
-    console.log(`MongoDB connected successfully at ${mongoHost}`);
+    console.log('MongoDB connected successfully');
   } catch (error) {
     console.error('MongoDB connection error:', error);
     process.exit(1);
