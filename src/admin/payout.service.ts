@@ -1,6 +1,6 @@
 import User, { IUser } from '../user/user.model';
 import { DIRECT_REFERRAL_PCT, UNILEVEL_PCTS, getTieredROIRate } from '../config/payouts';
-import { startOfMonth, endOfMonth } from 'date-fns';
+import { startOfMonth, endOfMonth, getDaysInMonth, differenceInDays } from 'date-fns';
 
 // --- Helper Functions ---
 
@@ -53,6 +53,7 @@ export interface PayoutSnapshot {
 export async function calculateMonthlyPayouts(monthDate: Date): Promise<PayoutSnapshot[]> {
   const startDate = startOfMonth(monthDate);
   const endDate = endOfMonth(monthDate);
+  const totalDaysInMonth = getDaysInMonth(monthDate);
 
   const activeUsers = await User.find({ status: 'active' }).lean();
   const newUsersThisMonth = await User.find({ dateJoined: { $gte: startDate, $lte: endDate } }).lean();
@@ -76,11 +77,21 @@ export async function calculateMonthlyPayouts(monthDate: Date): Promise<PayoutSn
 
   // 2. Calculate final snapshot for each active user
   for (const user of activeUsers) {
-    // ROI Payout
+    // --- Prorated ROI Payout ---
     const roiRate = getTieredROIRate(user.packageUSD);
-    const roiPayout = user.packageUSD * roiRate;
+    let fullMonthROIPayout = user.packageUSD * roiRate;
+    let roiPayout = fullMonthROIPayout;
 
-    // Direct Referral Bonus
+    // Check if the user joined in the current month
+    if (user.dateJoined >= startDate && user.dateJoined <= endDate) {
+      // Calculate the number of days the user was active in the month
+      // Adding 1 to include the joining day itself
+      const activeDays = differenceInDays(endDate, user.dateJoined) + 1;
+      const prorationFactor = activeDays / totalDaysInMonth;
+      roiPayout = fullMonthROIPayout * prorationFactor;
+    }
+    
+    // --- Direct Referral Bonus ---
     const directReferrals = await User.find({ 
       sponsorId: user.userId,
       dateJoined: { $gte: startDate, $lte: endDate }

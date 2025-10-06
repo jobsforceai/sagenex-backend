@@ -13,6 +13,7 @@ export interface IUser extends Document {
   dateJoined: Date;
   status: 'active' | 'inactive';
   salary: number;
+  assignedCollectorId: string | null;
 }
 
 const userSchema = new Schema<IUser>({
@@ -27,6 +28,7 @@ const userSchema = new Schema<IUser>({
   dateJoined: { type: Date, default: Date.now },
   status: { type: String, enum: ['active', 'inactive'], default: 'active' },
   salary: { type: Number, default: 0 },
+  assignedCollectorId: { type: String, ref: 'Collector', default: null },
 }, { timestamps: true });
 
 // Auto-increment userId before saving a new user
