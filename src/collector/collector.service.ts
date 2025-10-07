@@ -102,9 +102,9 @@ export const assignUserToCollector = async (userId: string, collectorId: string)
   // 2. Check if the user is already assigned to a collector
   if (user.assignedCollectorId) {
     if (user.assignedCollectorId === collectorId) {
-      throw new CustomError('ValidationError', 'User is already assigned to you.');
+      throw new CustomError('ConflictError', 'User is already assigned to you.');
     } else {
-      throw new CustomError('ValidationError', 'User is already assigned to another collector.');
+      throw new CustomError('ConflictError', 'User is already assigned to another collector.');
     }
   }
 
@@ -114,3 +114,71 @@ export const assignUserToCollector = async (userId: string, collectorId: string)
 
   return user;
 };
+
+import { customAlphabet } from 'nanoid';
+
+/**
+ * Creates a new user, similar to the admin onboarding process.
+ * @param userData The data for the new user.
+ * @param collectorId The ID of the collector creating the user.
+ * @returns The newly created user document.
+ */
+export const createUser = async (userData: Partial<IUser>, collectorId: string) => {
+    const { fullName, email, phone, initialInvestmentLocal, currencyCode, sponsorId, dateJoined } = userData as any;
+
+    // 1. Validation
+    if (!fullName || !email) {
+        throw new CustomError('ValidationError', 'Full name and email are required.');
+    }
+    const emailExists = await User.findOne({ email });
+    if (emailExists) {
+        throw new CustomError('ConflictError', 'Email already exists.');
+    }
+
+    // 2. Convert currency if initial investment is provided
+    let packageUSD = 0;
+    if (initialInvestmentLocal && currencyCode) {
+        const rate = await CurrencyRate.findOne({ currencyCode: currencyCode.toUpperCase() });
+        if (!rate) {
+            throw new CustomError('ValidationError', `No conversion rate set for currency '${currencyCode}'.`);
+        }
+        packageUSD = initialInvestmentLocal / rate.rateToUSDT;
+    }
+
+    // 3. Resolve Sponsor
+    let resolvedSponsorId: string | null = null;
+    if (sponsorId) {
+        const sponsor = await User.findOne({ $or: [{ userId: sponsorId }, { referralCode: sponsorId }] });
+        if (!sponsor) {
+            throw new CustomError('ValidationError', `Sponsor with ID or Referral Code '${sponsorId}' not found.`);
+        }
+        resolvedSponsorId = sponsor.userId;
+    }
+
+    // 4. Create User
+    const nanoid = customAlphabet('0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ', 8);
+    const newUser = new User({
+        fullName,
+        email,
+        phone,
+        packageUSD,
+        sponsorId: resolvedSponsorId,
+        dateJoined: dateJoined ? new Date(dateJoined) : new Date(),
+        pvPoints: packageUSD * 0.1,
+        referralCode: nanoid(),
+        assignedCollectorId: collectorId, // Assign to the collector who created the user
+    });
+
+    await newUser.save();
+    return newUser;
+};
+
+/**
+ * Gets a list of all users that are not assigned to any collector.
+ * @returns A promise that resolves to an array of user documents.
+ */
+export const getUnassignedUsers = async (): Promise<IUser[]> => {
+    const users = await User.find({ assignedCollectorId: null }).select('-password');
+    return users;
+};
+

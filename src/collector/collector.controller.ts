@@ -68,26 +68,56 @@ export const getAssignedUsers = async (req: Request, res: Response) => {
 };
 
 /**
- * Allows a collector to assign a user to themselves.
+ * Creates a new user, similar to the admin onboarding process.
+ * This is a Collector-only action.
  */
-export const assignUser = async (req: Request, res: Response) => {
-  const collector = (req as any).user;
-  const { userId } = req.body;
-
-  // 1. Validation
-  if (!userId) {
-    return res.status(400).json({ message: 'userId is required.' });
-  }
-
-  try {
-    const updatedUser = await collectorService.assignUserToCollector(userId, collector.collectorId);
-    res.status(200).json({ message: `User ${userId} assigned successfully.`, user: updatedUser });
-  } catch (error: any) {
-    if (error.name === 'ValidationError' || error.name === 'NotFoundError') {
-      return res.status(400).json({ message: error.message });
+export const createUser = async (req: Request, res: Response) => {
+    const collector = (req as any).user;
+    try {
+        const newUser = await collectorService.createUser(req.body, collector.collectorId);
+        res.status(201).json({ message: 'User created successfully.', user: newUser });
+    } catch (error: any) {
+        if (error.name === 'ValidationError') {
+            return res.status(400).json({ message: error.message });
+        }
+        if (error.name === 'ConflictError') {
+            return res.status(409).json({ message: error.message });
+        }
+        console.error('Error creating user:', error);
+        res.status(500).json({ message: 'Error creating user.', error: error.message });
     }
-    console.error(`Error assigning user ${userId}:`, error);
-    res.status(500).json({ message: 'Error assigning user.', error: error.message });
-  }
+};
+
+/**
+ * Gets a list of all users that are not assigned to any collector.
+ */
+export const getUnassignedUsers = async (req: Request, res: Response) => {
+    try {
+        const users = await collectorService.getUnassignedUsers();
+        res.status(200).json(users);
+    } catch (error: any) {
+        console.error('Error fetching unassigned users:', error);
+        res.status(500).json({ message: 'Error fetching unassigned users.', error: error.message });
+    }
+};
+
+/**
+ * Allows a collector to assign a user to themselves.
+ * The user must not already have a collector assigned.
+ */
+export const assignUserToSelf = async (req: Request, res: Response) => {
+    const collector = (req as any).user;
+    const { userId } = req.params;
+
+    try {
+        const updatedUser = await collectorService.assignUserToCollector(userId, collector.collectorId);
+        res.status(200).json({ message: `User ${userId} assigned successfully.`, user: updatedUser });
+    } catch (error: any) {
+        if (error.name === 'ValidationError' || error.name === 'NotFoundError' || error.name === 'ConflictError') {
+            return res.status(400).json({ message: error.message });
+        }
+        console.error(`Error assigning user ${userId}:`, error);
+        res.status(500).json({ message: 'Error assigning user.', error: error.message });
+    }
 };
 

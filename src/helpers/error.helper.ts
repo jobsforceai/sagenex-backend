@@ -1,4 +1,4 @@
-export type AppErrorType = 'ValidationError' | 'AuthorizationError' | 'NotFoundError' | 'ConcurrencyError';
+export type AppErrorType = 'ValidationError' | 'AuthorizationError' | 'NotFoundError' | 'ConcurrencyError' | 'ConflictError';
 
 /**
  * Custom error class to allow for specific error handling in controllers.
