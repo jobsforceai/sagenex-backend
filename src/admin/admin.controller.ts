@@ -68,7 +68,7 @@ export const onboardUser = async (req: Request, res: Response) => {
     await newUser.save();
 
     // 5. Send welcome email (fire and forget)
-    // sendWelcomeEmail(newUser, sponsorId);
+    sendWelcomeEmail(newUser, sponsorId);
 
     res.status(201).json({ message: 'User onboarded successfully.', user: newUser });
   } catch (error) {
@@ -196,8 +196,10 @@ export const getUser = async (req: Request, res: Response) => {
  */
 export const deleteUser = async (req: Request, res: Response) => {
     const { userId } = req.params;
+    const admin = (req as any).user; // Admin user from protectAdmin middleware
+
     try {
-        await adminService.deleteUser(userId);
+        await adminService.deleteUser(userId, admin.adminId);
         res.status(204).send();
     } catch (error: any) {
         if (error.name === 'NotFoundError') {

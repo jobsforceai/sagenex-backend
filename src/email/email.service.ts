@@ -12,7 +12,7 @@ let transporter: nodemailer.Transporter;
 const initializeTransporter = async () => {
   if (process.env.EMAIL_HOST && process.env.EMAIL_USER && process.env.EMAIL_PASS) {
     // --- Production/Real Email Transport ---
-    console.log('Initializing real email transporter...');
+    console.log('Initializing real email transporter with host:', process.env.EMAIL_HOST, 'and user:', process.env.EMAIL_USER);
     transporter = nodemailer.createTransport({
       host: process.env.EMAIL_HOST,
       port: parseInt(process.env.EMAIL_PORT || '587', 10),
@@ -24,7 +24,7 @@ const initializeTransporter = async () => {
     });
   } else {
     // --- Development/Ethereal Transport ---
-    console.log('Initializing Ethereal email transporter...');
+    console.log('Initializing Ethereal email transporter (EMAIL_HOST, EMAIL_USER, or EMAIL_PASS not found in .env).');
     const testAccount = await nodemailer.createTestAccount();
     transporter = nodemailer.createTransport({
       host: 'smtp.ethereal.email',
@@ -53,6 +53,7 @@ export const sendWelcomeEmail = async (user: IUser, originalSponsorId?: string):
   }
 
   try {
+    console.log(`Attempting to send welcome email to ${user.email}...`);
     // Define the email options
     const mailOptions = {
       from: '"Sagenex Admin" <noreply@sagenex.com>',
@@ -64,7 +65,7 @@ export const sendWelcomeEmail = async (user: IUser, originalSponsorId?: string):
     // Send the email
     const info = await transporter.sendMail(mailOptions);
 
-    console.log('Email sent: %s', info.messageId);
+    console.log('Email sent successfully! Message ID: %s', info.messageId);
 
     // If using Ethereal, log the preview URL
     const etherealUrl = nodemailer.getTestMessageUrl(info);
@@ -72,8 +73,10 @@ export const sendWelcomeEmail = async (user: IUser, originalSponsorId?: string):
       console.log('Preview URL: %s', etherealUrl);
     }
 
-  } catch (error) {
-    console.error('Error sending welcome email:', error);
+  } catch (error){
+    console.error('--- DETAILED ERROR SENDING EMAIL ---');
+    console.error(error);
+    console.error('------------------------------------');
     // We don't re-throw the error because an email failure should not
     // block the main application flow (e.g., user creation).
   }

@@ -202,13 +202,29 @@ export const getUserById = async (userId: string): Promise<IUser> => {
     return user;
 };
 
+import DeletedUser from './deleted.user.model';
+
 /**
  * Deletes a single user by their user ID.
  * @param userId The ID of the user to delete.
+ * @param adminId The ID of the admin performing the deletion.
  */
-export const deleteUser = async (userId: string): Promise<void> => {
-    const result = await User.deleteOne({ userId });
-    if (result.deletedCount === 0) {
+export const deleteUser = async (userId: string, adminId: string): Promise<void> => {
+    // 1. Find the user
+    const user = await User.findOne({ userId });
+    if (!user) {
         throw new CustomError('NotFoundError', `User with ID '${userId}' not found.`);
     }
+
+    // 2. Create a deleted user record
+    const deletedUser = new DeletedUser({
+        ...user.toObject(),
+        _id: undefined, // Let MongoDB generate a new _id
+        deletedAt: new Date(),
+        deletedBy: adminId,
+    });
+    await deletedUser.save();
+
+    // 3. Delete the original user
+    await user.deleteOne();
 };

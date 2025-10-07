@@ -122,8 +122,6 @@ export const getWelcomeEmailHTML = (user: IUser, originalSponsorId?: string): st
                     ` : ''}
                 </table>
 
-                <p>You can now log in to your portal to view your package details, track your earnings, and explore all the features available to you.</p>
-                <a href="#" class="button">Go to Your Portal</a>
             </div>
             <div class="footer">
                 <p>&copy; ${new Date().getFullYear()} Sagenex. All rights reserved.</p>
