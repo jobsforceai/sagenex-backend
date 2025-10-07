@@ -4,6 +4,8 @@ import WalletLedger from '../wallet/wallet.ledger.model';
 import { CustomError } from '../helpers/error.helper';
 import CurrencyRate from '../rates/currency.model';
 import { sendWelcomeEmail } from '../email/email.service';
+import { customAlphabet } from 'nanoid';
+import { getLiveRatesObject } from '../helpers/currency.helper';
 
 interface DepositData {
   userId: string;
@@ -17,6 +19,7 @@ interface DepositData {
 
 /**
  * Records an offline deposit, converts it to USDT, and creates the initial ledger entry.
+ * Any collector can now record a deposit for any user.
  * @param data The deposit data in local currency.
  * @returns The newly created offline deposit record.
  */
@@ -29,12 +32,7 @@ export const recordDeposit = async (data: DepositData): Promise<IOfflineDeposit>
     throw new CustomError('NotFoundError', `User with ID '${userId}' not found.`);
   }
 
-  // 2. Security Check: Verify the collector is assigned to this user
-  if (user.assignedCollectorId !== collectorId) {
-    throw new CustomError('AuthorizationError', 'You are not assigned to this user.');
-  }
-
-  // 3. Fetch the conversion rate
+  // 2. Fetch the conversion rate
   const rate = await CurrencyRate.findOne({ currencyCode: currencyCode.toUpperCase() });
   if (!rate) {
     throw new CustomError('ValidationError', `No conversion rate set for currency '${currencyCode}'.`);
@@ -42,7 +40,7 @@ export const recordDeposit = async (data: DepositData): Promise<IOfflineDeposit>
   const conversionRate = rate.rateToUSDT;
   const amountUSDT = amountLocal / conversionRate;
 
-  // 4. Create the OfflineDeposit record
+  // 3. Create the OfflineDeposit record
   const newDeposit = new OfflineDeposit({
     userId,
     collectorId,
@@ -57,11 +55,11 @@ export const recordDeposit = async (data: DepositData): Promise<IOfflineDeposit>
   });
   await newDeposit.save();
 
-  // 5. Create the corresponding WalletLedger entry with the USDT amount
+  // 4. Create the corresponding WalletLedger entry
   const ledgerEntry = new WalletLedger({
     userId,
     type: 'OFFLINE_DEPOSIT',
-    amount: amountUSDT, // Use the converted USDT amount
+    amount: amountUSDT,
     status: 'PENDING',
     createdBy: collectorId,
     meta: {
@@ -78,54 +76,12 @@ export const recordDeposit = async (data: DepositData): Promise<IOfflineDeposit>
 };
 
 /**
- * Gets a list of all users assigned to a specific collector.
- * @param collectorId The ID of the collector.
- * @returns A promise that resolves to an array of user documents.
- */
-export const getAssignedUsers = async (collectorId: string): Promise<IUser[]> => {
-  const users = await User.find({ assignedCollectorId: collectorId }).select('-password'); // Exclude sensitive data
-  return users;
-};
-
-/**
- * Allows a collector to assign a user to themselves, if the user is unassigned.
- * @param userId The user to be assigned.
- * @param collectorId The collector performing the action.
- * @returns The updated user document.
- */
-export const assignUserToCollector = async (userId: string, collectorId: string): Promise<IUser> => {
-  // 1. Find the user by their userId
-  const user = await User.findOne({ userId });
-  if (!user) {
-    throw new CustomError('NotFoundError', `User with ID '${userId}' not found.`);
-  }
-
-  // 2. Check if the user is already assigned to a collector
-  if (user.assignedCollectorId) {
-    if (user.assignedCollectorId === collectorId) {
-      throw new CustomError('ConflictError', 'User is already assigned to you.');
-    } else {
-      throw new CustomError('ConflictError', 'User is already assigned to another collector.');
-    }
-  }
-
-  // 3. Assign the user to the current collector
-  user.assignedCollectorId = collectorId;
-  await user.save();
-
-  return user;
-};
-
-import { customAlphabet } from 'nanoid';
-
-/**
- * Creates a new user, similar to the admin onboarding process.
+ * Creates a new user. The user is not assigned to any collector.
  * @param userData The data for the new user.
- * @param collectorId The ID of the collector creating the user.
  * @returns The newly created user document.
  */
-export const createUser = async (userData: Partial<IUser>, collectorId: string) => {
-    const { fullName, email, phone, initialInvestmentLocal, currencyCode, sponsorId, dateJoined } = userData as any;
+export const createUser = async (userData: Partial<IUser>) => {
+    const { fullName, email, phone, sponsorId, dateJoined } = userData as any;
 
     // 1. Validation
     if (!fullName || !email) {
@@ -136,17 +92,7 @@ export const createUser = async (userData: Partial<IUser>, collectorId: string) 
         throw new CustomError('ConflictError', 'Email already exists.');
     }
 
-    // 2. Convert currency if initial investment is provided
-    let packageUSD = 0;
-    if (initialInvestmentLocal && currencyCode) {
-        const rate = await CurrencyRate.findOne({ currencyCode: currencyCode.toUpperCase() });
-        if (!rate) {
-            throw new CustomError('ValidationError', `No conversion rate set for currency '${currencyCode}'.`);
-        }
-        packageUSD = initialInvestmentLocal / rate.rateToUSDT;
-    }
-
-    // 3. Resolve Sponsor
+    // 2. Resolve Sponsor
     let resolvedSponsorId: string | null = null;
     if (sponsorId) {
         const sponsor = await User.findOne({ $or: [{ userId: sponsorId }, { referralCode: sponsorId }] });
@@ -156,45 +102,44 @@ export const createUser = async (userData: Partial<IUser>, collectorId: string) 
         resolvedSponsorId = sponsor.userId;
     }
 
-    // 4. Create User
+    // 3. Create User
     const nanoid = customAlphabet('0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ', 8);
     const newUser = new User({
         fullName,
         email,
         phone,
-        packageUSD,
+        packageUSD: 0, // Package is now 0 by default
         sponsorId: resolvedSponsorId,
         dateJoined: dateJoined ? new Date(dateJoined) : new Date(),
-        pvPoints: packageUSD * 0.1,
+        pvPoints: 0, // PV points are 0 by default
         referralCode: nanoid(),
-        assignedCollectorId: collectorId, // Assign to the collector who created the user
     });
 
     await newUser.save();
 
-    // Send welcome email (fire and forget)
+    // 4. Send welcome email (fire and forget)
     sendWelcomeEmail(newUser, sponsorId);
 
     return newUser;
 };
 
-import { getLiveRatesObject } from '../helpers/currency.helper';
-
 /**
- * Gets a list of all users that are not assigned to any collector.
- * @returns A promise that resolves to an array of user documents.
+ * Gets the deposit history for a specific user.
+ * @param userId The ID of the user.
+ * @returns A promise that resolves to an array of offline deposit documents.
  */
-export const getUnassignedUsers = async (): Promise<IUser[]> => {
-    const users = await User.find({ assignedCollectorId: null }).select('-password');
-    return users;
+export const getUserDepositHistory = async (userId: string): Promise<IOfflineDeposit[]> => {
+    const user = await User.findOne({ userId });
+    if (!user) {
+        throw new CustomError('NotFoundError', `User with ID '${userId}' not found.`);
+    }
+    const deposits = await OfflineDeposit.find({ userId }).sort({ createdAt: -1 });
+    return deposits;
 };
 
 /**
  * Gets the live currency rates for collector reference.
  */
 export const getLiveRates = async () => {
-    // Reuse the same helper function as the admin service
-    // Pass false to get the cached rates and avoid unnecessary API calls
     return getLiveRatesObject(false);
 };
-

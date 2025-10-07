@@ -7,17 +7,14 @@ const router = Router();
 // All routes in this file are protected by the collector auth middleware
 router.use(protectCollector);
 
-// Route to create a new user (similar to admin onboarding)
+// Route to create a new user
 router.post('/users', collectorController.createUser);
 
-// Route to get all users assigned to the collector
-router.get('/users', collectorController.getAssignedUsers);
+// Route to get a list of all users
+router.get('/users', collectorController.getAllUsers);
 
-// Route to get all users that are not assigned to any collector
-router.get('/users/unassigned', collectorController.getUnassignedUsers);
-
-// Route for a collector to assign a user to themselves
-router.post('/users/:userId/assign-self', collectorController.assignUserToSelf);
+// Route to get the deposit history for a specific user
+router.get('/users/:userId/deposits', collectorController.getUserDepositHistory);
 
 // Route to get live currency rates
 router.get('/rates/live', collectorController.getLiveRates);

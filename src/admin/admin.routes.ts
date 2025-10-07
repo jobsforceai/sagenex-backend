@@ -29,12 +29,10 @@ router.delete('/users/:userId', adminController.deleteUser);
 // Route to get the referral tree for a user
 router.get('/users/:userId/tree', adminController.getReferralTree);
 
-// Route to assign a collector to a user
-router.post('/users/:userId/assign-collector', adminController.assignCollector);
-
 // Routes for managing collectors
 router.post('/collectors', adminController.createCollector);
 router.get('/collectors', adminController.getCollectors);
+router.get('/collectors/:collectorId/deposits', adminController.getCollectorDeposits);
 
 // Routes for managing currency rates
 router.get('/rates/live', adminController.getLiveRates);

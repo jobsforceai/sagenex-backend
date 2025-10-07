@@ -32,32 +32,6 @@ export const createAdmin = async (adminData: Partial<IAdmin>) => {
 };
 
 /**
- * Assigns a cash collector to a user.
- * @param userId The ID of the user to assign the collector to.
- * @param collectorId The ID of the collector.
- * @returns The updated user document.
- */
-export const assignCollectorToUser = async (userId: string, collectorId: string) => {
-  // 1. Find the user to be assigned
-  const user = await User.findOne({ userId });
-  if (!user) {
-    throw new CustomError('NotFoundError', `User with ID '${userId}' not found.`);
-  }
-
-  // 2. Find the collector from the Collector model
-  const collector = await Collector.findOne({ collectorId: collectorId });
-  if (!collector) {
-    throw new CustomError('NotFoundError', `Collector with ID '${collectorId}' not found.`);
-  }
-
-  // 3. Assign the collector and save
-  user.assignedCollectorId = collector.collectorId;
-  await user.save();
-
-  return user;
-};
-
-/**
  * Creates a new collector.
  * @param collectorData The data for the new collector.
  * @returns The newly created collector document.
@@ -68,8 +42,21 @@ export const createCollector = async (collectorData: Partial<ICollector>) => {
   }
   const collector = new Collector(collectorData);
   await collector.save();
-  console.log('Collector created in service:', collector); // Debugging log
   return collector;
+};
+
+/**
+ * Gets all deposits recorded by a specific collector.
+ * @param collectorId The ID of the collector.
+ * @returns A promise that resolves to an array of offline deposit documents.
+ */
+export const getDepositsByCollector = async (collectorId: string): Promise<IOfflineDeposit[]> => {
+    const collector = await Collector.findOne({ collectorId });
+    if (!collector) {
+        throw new CustomError('NotFoundError', `Collector with ID '${collectorId}' not found.`);
+    }
+    const deposits = await OfflineDeposit.find({ collectorId }).sort({ createdAt: -1 });
+    return deposits;
 };
 
 /**

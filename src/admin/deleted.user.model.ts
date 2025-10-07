@@ -21,7 +21,6 @@ const deletedUserSchema = new Schema<IDeletedUser>({
   dateJoined: { type: Date, required: true },
   status: { type: String, enum: ['active', 'inactive'], required: true },
   salary: { type: Number, default: 0 },
-  assignedCollectorId: { type: String, default: null },
   deletedAt: { type: Date, default: Date.now },
   deletedBy: { type: String, required: true },
 }, {
