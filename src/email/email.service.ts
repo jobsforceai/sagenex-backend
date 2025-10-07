@@ -12,11 +12,9 @@ let transporter: nodemailer.Transporter;
 const initializeTransporter = async () => {
   if (process.env.EMAIL_HOST && process.env.EMAIL_USER && process.env.EMAIL_PASS) {
     // --- Production/Real Email Transport ---
-    console.log('Initializing real email transporter with host:', process.env.EMAIL_HOST, 'and user:', process.env.EMAIL_USER);
+    console.log('Initializing Gmail transporter for user:', process.env.EMAIL_USER);
     transporter = nodemailer.createTransport({
-      host: process.env.EMAIL_HOST,
-      port: parseInt(process.env.EMAIL_PORT || '587', 10),
-      secure: parseInt(process.env.EMAIL_PORT || '587', 10) === 465, // true for 465, false for other ports
+      service: 'gmail',
       auth: {
         user: process.env.EMAIL_USER,
         pass: process.env.EMAIL_PASS,
