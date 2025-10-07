@@ -19,6 +19,9 @@ router.get('/users/unassigned', collectorController.getUnassignedUsers);
 // Route for a collector to assign a user to themselves
 router.post('/users/:userId/assign-self', collectorController.assignUserToSelf);
 
+// Route to get live currency rates
+router.get('/rates/live', collectorController.getLiveRates);
+
 // Route to create a new offline deposit for a user
 router.post('/deposits', collectorController.createOfflineDeposit);
 

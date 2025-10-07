@@ -3,6 +3,7 @@ import OfflineDeposit, { IOfflineDeposit } from '../deposits/offline.deposit.mod
 import WalletLedger from '../wallet/wallet.ledger.model';
 import { CustomError } from '../helpers/error.helper';
 import CurrencyRate from '../rates/currency.model';
+import { sendWelcomeEmail } from '../email/email.service';
 
 interface DepositData {
   userId: string;
@@ -170,8 +171,14 @@ export const createUser = async (userData: Partial<IUser>, collectorId: string) 
     });
 
     await newUser.save();
+
+    // Send welcome email (fire and forget)
+    sendWelcomeEmail(newUser, sponsorId);
+
     return newUser;
 };
+
+import { getLiveRatesObject } from '../helpers/currency.helper';
 
 /**
  * Gets a list of all users that are not assigned to any collector.
@@ -180,5 +187,14 @@ export const createUser = async (userData: Partial<IUser>, collectorId: string) 
 export const getUnassignedUsers = async (): Promise<IUser[]> => {
     const users = await User.find({ assignedCollectorId: null }).select('-password');
     return users;
+};
+
+/**
+ * Gets the live currency rates for collector reference.
+ */
+export const getLiveRates = async () => {
+    // Reuse the same helper function as the admin service
+    // Pass false to get the cached rates and avoid unnecessary API calls
+    return getLiveRatesObject(false);
 };
 

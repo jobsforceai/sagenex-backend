@@ -121,3 +121,15 @@ export const assignUserToSelf = async (req: Request, res: Response) => {
     }
 };
 
+/**
+ * Gets live currency rates for collector reference.
+ */
+export const getLiveRates = async (req: Request, res: Response) => {
+    try {
+        const rates = await collectorService.getLiveRates();
+        res.status(200).json(rates);
+    } catch (error: any) {
+        res.status(500).json({ message: 'Error fetching live rates.', error: error.message });
+    }
+};
+
