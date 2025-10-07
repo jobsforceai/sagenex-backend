@@ -1,94 +1,82 @@
-import nodemailer from 'nodemailer';
 import { google } from 'googleapis';
 import 'dotenv/config';
 import { IUser } from '../user/user.model';
 import { getWelcomeEmailHTML } from './templates/welcome.template';
 
-const OAuth2 = google.auth.OAuth2;
-
-let transporter: nodemailer.Transporter | null = null;
-
 /**
- * Initializes the Nodemailer transporter with Google OAuth2.
+ * Sends an email using the Gmail REST API with OAuth2.
+ * This avoids SMTP port blocking on platforms like Render.
  */
-const initializeTransporter = async () => {
+const sendViaGmailAPI = async (to: string, subject: string, html: string) => {
   const { EMAIL_USER, OAUTH_CLIENT_ID, OAUTH_CLIENT_SECRET, OAUTH_REFRESH_TOKEN } = process.env;
 
   if (!EMAIL_USER || !OAUTH_CLIENT_ID || !OAUTH_CLIENT_SECRET || !OAUTH_REFRESH_TOKEN) {
     console.error('FATAL ERROR: Email OAuth2 environment variables are not fully configured.');
-    return;
+    throw new Error('Email service is not configured.');
   }
 
-  try {
-    console.log('Initializing Google OAuth2 for email...');
-    const oauth2Client = new OAuth2(
-      OAUTH_CLIENT_ID,
-      OAUTH_CLIENT_SECRET,
-      'https://developers.google.com/oauthplayground' // Redirect URL
-    );
+  const oauth2Client = new google.auth.OAuth2(
+    OAUTH_CLIENT_ID,
+    OAUTH_CLIENT_SECRET,
+    'https://developers.google.com/oauthplayground' // Redirect URL
+  );
 
-    oauth2Client.setCredentials({
-      refresh_token: OAUTH_REFRESH_TOKEN,
-    });
+  oauth2Client.setCredentials({
+    refresh_token: OAUTH_REFRESH_TOKEN,
+  });
 
-    // Get a new access token
-    const accessToken = await oauth2Client.getAccessToken();
+  const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
 
-    if (!accessToken.token) {
-        throw new Error('Failed to create access token.');
-    }
+  // The email needs to be RFC 2822 formatted and base64url encoded
+  const emailLines = [
+    `From: "Sagenex Admin" <${EMAIL_USER}>`,
+    `To: ${to}`,
+    `Subject: ${subject}`,
+    'MIME-Version: 1.0',
+    'Content-Type: text/html; charset=utf-8',
+    '',
+    html,
+  ];
+  const email = emailLines.join('\r\n');
 
-    console.log('Successfully created access token. Configuring Nodemailer transporter...');
+  const raw = Buffer.from(email)
+    .toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
 
-    transporter = nodemailer.createTransport({
-      service: 'gmail',
-      auth: {
-        type: 'OAuth2',
-        user: EMAIL_USER,
-        clientId: OAUTH_CLIENT_ID,
-        clientSecret: OAUTH_CLIENT_SECRET,
-        refreshToken: OAUTH_REFRESH_TOKEN,
-        accessToken: accessToken.token,
-      },
-    });
+  const result = await gmail.users.messages.send({
+    userId: 'me',
+    requestBody: {
+      raw,
+    },
+  });
 
-    console.log('Nodemailer transporter initialized successfully.');
-
-  } catch (error) {
-    console.error('--- FAILED TO INITIALIZE NODEMAILER TRANSPORTER ---');
-    console.error(error);
-    console.error('----------------------------------------------------');
-  }
+  return result.data.id;
 };
 
-// Initialize the transporter when the service is loaded
-initializeTransporter();
-
 /**
- * Sends a welcome email to a newly onboarded user using Nodemailer with OAuth2.
+ * Sends a welcome email to a newly onboarded user.
  * @param user The user object containing details like fullName and email.
  * @param originalSponsorId The sponsor ID or referral code used during sign-up.
  */
 export const sendWelcomeEmail = async (user: IUser, originalSponsorId?: string): Promise<void> => {
-  if (!transporter) {
-    console.error('Email transporter is not initialized. Cannot send welcome email.');
-    return;
-  }
-
-  const mailOptions = {
-    from: `"Sagenex Admin" <${process.env.EMAIL_USER}>`,
-    to: user.email,
-    subject: 'Welcome to Sagenex!',
-    html: getWelcomeEmailHTML(user, originalSponsorId),
-  };
-
   try {
-    console.log(`Attempting to send welcome email to ${user.email} via Gmail...`);
-    const info = await transporter.sendMail(mailOptions);
-    console.log('Email sent successfully! Message ID: %s', info.messageId);
-  } catch (error) {
-    console.error('--- DETAILED ERROR SENDING EMAIL VIA GMAIL OAUTH ---');
-    console.error(error);
+    console.log(`Attempting to send welcome email to ${user.email} via Gmail API...`);
+    const messageId = await sendViaGmailAPI(
+      user.email,
+      'Welcome to Sagenex!',
+      getWelcomeEmailHTML(user, originalSponsorId)
+    );
+    console.log('Email sent successfully! Message ID: %s', messageId);
+  } catch (error: any) {
+    console.error('--- DETAILED ERROR SENDING EMAIL VIA GMAIL API ---');
+    // Google API errors are often in the `errors` property
+    if (error.response && error.response.data) {
+        console.error(error.response.data);
+    } else {
+        console.error(error);
+    }
     console.error('----------------------------------------------------');
   }
 };
