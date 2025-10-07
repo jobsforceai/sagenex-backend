@@ -201,3 +201,14 @@ export const getUserById = async (userId: string): Promise<IUser> => {
     }
     return user;
 };
+
+/**
+ * Deletes a single user by their user ID.
+ * @param userId The ID of the user to delete.
+ */
+export const deleteUser = async (userId: string): Promise<void> => {
+    const result = await User.deleteOne({ userId });
+    if (result.deletedCount === 0) {
+        throw new CustomError('NotFoundError', `User with ID '${userId}' not found.`);
+    }
+};

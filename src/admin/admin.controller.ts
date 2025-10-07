@@ -192,6 +192,23 @@ export const getUser = async (req: Request, res: Response) => {
 };
 
 /**
+ * Deletes a single user by their ID.
+ */
+export const deleteUser = async (req: Request, res: Response) => {
+    const { userId } = req.params;
+    try {
+        await adminService.deleteUser(userId);
+        res.status(204).send();
+    } catch (error: any) {
+        if (error.name === 'NotFoundError') {
+            return res.status(404).json({ message: error.message });
+        }
+        console.error(`Error deleting user ${userId}:`, error);
+        res.status(500).json({ message: 'Error deleting user.', error: error.message });
+    }
+};
+
+/**
  * Assigns a collector to a specific user.
  */
 export const assignCollector = async (req: Request, res: Response) => {

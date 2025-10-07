@@ -2,12 +2,13 @@ import { Request, Response, NextFunction } from 'express';
 import * as jwt from 'jsonwebtoken';
 import Admin from '../admin/admin.model';
 import Collector from '../collector/collector.model';
+import User from '../user/user.model';
 
 interface AuthRequest extends Request {
   user?: any;
 }
 
-const protect = (role: 'admin' | 'collector') => async (req: AuthRequest, res: Response, next: NextFunction) => {
+const protect = (role: 'admin' | 'collector' | 'user') => async (req: AuthRequest, res: Response, next: NextFunction) => {
   let token;
 
   if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
@@ -30,8 +31,10 @@ const protect = (role: 'admin' | 'collector') => async (req: AuthRequest, res: R
       let user;
       if (role === 'admin') {
         user = await Admin.findOne({ adminId: decoded.id });
-      } else {
+      } else if (role === 'collector') {
         user = await Collector.findOne({ collectorId: decoded.id });
+      } else {
+        user = await User.findOne({ userId: decoded.id });
       }
 
       if (!user) {
@@ -54,3 +57,4 @@ const protect = (role: 'admin' | 'collector') => async (req: AuthRequest, res: R
 
 export const protectAdmin = protect('admin');
 export const protectCollector = protect('collector');
+export const protectUser = protect('user');

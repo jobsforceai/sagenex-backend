@@ -6,6 +6,7 @@ export interface IUser extends Document {
   fullName: string;
   email: string;
   phone: string;
+  profilePicture?: string;
   sponsorId: string | null;
   referralCode: string;
   packageUSD: number;
@@ -21,6 +22,7 @@ const userSchema = new Schema<IUser>({
   fullName: { type: String, required: true, trim: true },
   email: { type: String, required: true, unique: true, trim: true, lowercase: true },
   phone: { type: String, trim: true },
+  profilePicture: { type: String },
   sponsorId: { type: String, default: null, index: true },
   referralCode: { type: String, required: true, unique: true },
   packageUSD: { type: Number, required: true, default: 0 },

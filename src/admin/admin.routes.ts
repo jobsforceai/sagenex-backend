@@ -23,6 +23,9 @@ router.get('/users', adminController.getAllUsers);
 // Route to get a single user by ID
 router.get('/users/:userId', adminController.getUser);
 
+// Route to delete a single user by ID
+router.delete('/users/:userId', adminController.deleteUser);
+
 // Route to get the referral tree for a user
 router.get('/users/:userId/tree', adminController.getReferralTree);
 

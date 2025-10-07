@@ -3,6 +3,65 @@ import bcrypt from 'bcryptjs';
 import Admin from '../admin/admin.model';
 import Collector from '../collector/collector.model';
 import { CustomError } from '../helpers/error.helper';
+import { OAuth2Client } from 'google-auth-library';
+import User from '../user/user.model';
+import { customAlphabet } from 'nanoid';
+
+const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+
+/**
+ * Handles Google Sign-In. Verifies the token, finds or creates a user, and returns a JWT.
+ * @param idToken The ID token received from the frontend.
+ * @returns An object containing the JWT and user information.
+ */
+export const loginWithGoogle = async (idToken: string) => {
+  // 1. Verify the Google ID token
+  const ticket = await googleClient.verifyIdToken({
+    idToken,
+    audience: process.env.GOOGLE_CLIENT_ID,
+  });
+  const payload = ticket.getPayload();
+
+  if (!payload || !payload.email) {
+    throw new CustomError('AuthorizationError', 'Invalid Google token.');
+  }
+
+  const { email, name, picture } = payload;
+
+  // 2. Find or create the user
+  let user = await User.findOne({ email });
+
+  if (!user) {
+    const nanoid = customAlphabet('0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ', 8);
+    user = new User({
+      fullName: name,
+      email,
+      profilePicture: picture,
+      referralCode: nanoid(), // Generate a new referral code
+      packageUSD: 0, // New users start with a 0 package
+    });
+    await user.save();
+  }
+
+  // 3. Generate our own application JWT
+  const appPayload = {
+    id: user.userId,
+    role: 'user',
+  };
+
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    console.error('FATAL: JWT_SECRET is not defined in environment variables.');
+    throw new Error('Server configuration error.');
+  }
+
+  const token = jwt.sign(appPayload, secret, {
+    expiresIn: process.env.JWT_EXPIRES_IN || '7d',
+    algorithm: 'HS256',
+  });
+
+  return { token, user };
+};
 
 /**
  * Logs in a user (Admin or Collector) and returns a JWT.
