@@ -4,6 +4,7 @@ import WalletLedger from '../wallet/wallet.ledger.model';
 import WalletSummary from '../wallet/wallet.summary.model';
 import { CustomError } from '../helpers/error.helper';
 import { ICollector } from '../collector/collector.model';
+import { currencyToCountryMap } from '../helpers/currency.data';
 import { getLiveRatesObject } from '../helpers/currency.helper';
 import CurrencyRate from '../rates/currency.model';
 import mongoose from 'mongoose';
@@ -68,6 +69,45 @@ export const getLiveRatesForAdmin = async (force: boolean = false) => {
 };
 
 /**
+ * Refreshes live rates and automatically updates the fixed rates.
+ * @returns The newly fetched live rates.
+ */
+export const refreshLiveRatesAndUpdateFixed = async () => {
+    const liveRates = await getLiveRatesObject(true); // Force refresh
+
+    const bulkOps = Object.entries(liveRates).map(([currencyCode, rateData]) => {
+        let fixedRate: number;
+        if (currencyCode.toUpperCase() === 'USD') {
+            fixedRate = 1; // Always set USD to 1
+        } else {
+            // Apply a 2% margin and round to 4 decimal places
+            fixedRate = parseFloat((rateData.rate * 1.02).toFixed(4));
+        }
+        const countryName = currencyToCountryMap[currencyCode.toUpperCase()];
+
+        return {
+            updateOne: {
+                filter: { currencyCode },
+                update: {
+                    $set: {
+                        rateToUSDT: fixedRate,
+                        countryName,
+                        lastUpdatedBy: 'SYSTEM_AUTO_UPDATE',
+                    },
+                },
+                upsert: true,
+            },
+        };
+    });
+
+    if (bulkOps.length > 0) {
+        await CurrencyRate.bulkWrite(bulkOps);
+    }
+
+    return liveRates;
+};
+
+/**
  * Gets all fixed rates set by admins.
  */
 export const getFixedRates = async () => {
@@ -82,10 +122,12 @@ export const getFixedRates = async () => {
  */
 export const setFixedRate = async (currencyCode: string, rateToUSDT: number, adminId: string) => {
     const code = currencyCode.toUpperCase();
+    const countryName = currencyToCountryMap[code];
     const rate = await CurrencyRate.findOneAndUpdate(
         { currencyCode: code },
         {
             rateToUSDT,
+            countryName,
             lastUpdatedBy: adminId,
         },
         { new: true, upsert: true }

@@ -1,5 +1,6 @@
 import axios from 'axios';
 import 'dotenv/config';
+import { currencyToCountryMap } from './currency.data';
 
 // --- In-Memory Cache ---
 interface Cache {
@@ -118,10 +119,18 @@ export const getSupportedCurrencies = async (force: boolean = false): Promise<st
 }
 
 /**
- * Gets the entire live rates object.
+ * Gets the entire live rates object, including country names.
  * @param force - If true, forces a refresh of the cache.
- * @returns A promise that resolves to a record of currency rates against USD.
+ * @returns A promise that resolves to a record of currency rates against USD, with country names.
  */
-export const getLiveRatesObject = async (force: boolean = false): Promise<Record<string, number>> => {
-    return getLiveRates(force);
+export const getLiveRatesObject = async (force: boolean = false): Promise<Record<string, { rate: number; countryName?: string; }>> => {
+    const rates = await getLiveRates(force);
+    const ratesWithCountry = Object.entries(rates).reduce((acc, [code, rate]) => {
+        acc[code] = {
+            rate,
+            countryName: currencyToCountryMap[code.toUpperCase()],
+        };
+        return acc;
+    }, {} as Record<string, { rate: number; countryName?: string; }>);
+    return ratesWithCountry;
 }

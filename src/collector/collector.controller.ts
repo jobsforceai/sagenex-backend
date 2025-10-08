@@ -6,8 +6,6 @@ import User from '../user/user.model';
  * Gets a paginated and searchable list of all onboarded users.
  */
 export const getAllUsers = async (req: Request, res: Response) => {
-  console.log(`[Collector Controller] ==> Entering getAllUsers`);
-  const startTime = Date.now();
   try {
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 10;
@@ -36,13 +34,11 @@ export const getAllUsers = async (req: Request, res: Response) => {
       totalPages: Math.ceil(totalUsers / limit),
       totalUsers,
     };
-    console.log(`[Collector Controller] <== Exiting getAllUsers. Duration: ${Date.now() - startTime}ms`);
     res.status(200).json({
       users,
       pagination,
     });
   } catch (error) {
-    console.error(`[Collector Controller] Error in getAllUsers. Duration: ${Date.now() - startTime}ms`, error);
     res.status(500).json({ message: 'Error fetching users.', error });
   }
 };
