@@ -3,6 +3,7 @@ import Counter from '../helpers/counter.model';
 
 export interface IUser extends Document {
   userId: string;
+  googleId?: string;
   fullName: string;
   email: string;
   phone: string;
@@ -18,6 +19,7 @@ export interface IUser extends Document {
 
 const userSchema = new Schema<IUser>({
   userId: { type: String, unique: true },
+  googleId: { type: String, unique: true, sparse: true },
   fullName: { type: String, required: true, trim: true },
   email: { type: String, required: true, unique: true, trim: true, lowercase: true },
   phone: { type: String, trim: true },
