@@ -1,11 +1,11 @@
 import * as jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
+import { OAuth2Client } from 'google-auth-library';
+import { customAlphabet } from 'nanoid';
 import Admin from '../admin/admin.model';
 import Collector from '../collector/collector.model';
 import { CustomError } from '../helpers/error.helper';
-import { OAuth2Client } from 'google-auth-library';
 import User from '../user/user.model';
-import { customAlphabet } from 'nanoid';
 
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
@@ -22,28 +22,40 @@ export const loginWithGoogle = async (idToken: string) => {
   });
   const payload = ticket.getPayload();
 
-  if (!payload || !payload.email) {
+  if (!payload || !payload.email || !payload.sub) {
     throw new CustomError('AuthorizationError', 'Invalid Google token.');
   }
 
-  const { email, name, picture } = payload;
+  const { email, name, picture, sub: googleId } = payload;
 
-  // 2. Find or create the user
-  let user = await User.findOne({ email });
+  // 2. Find user by Google ID first
+  let user = await User.findOne({ googleId });
 
   if (!user) {
-    const nanoid = customAlphabet('0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ', 8);
-    user = new User({
-      fullName: name,
-      email,
-      profilePicture: picture,
-      referralCode: nanoid(), // Generate a new referral code
-      packageUSD: 0, // New users start with a 0 package
-    });
-    await user.save();
+    // 3. If not found, try to find by email to link accounts
+    user = await User.findOne({ email });
+    if (user) {
+      // User was pre-registered by admin/collector, link their Google ID
+      user.googleId = googleId;
+      user.profilePicture = user.profilePicture || picture; // Update picture if not set
+      await user.save();
+    } else {
+      // 4. If no user exists, create a new one
+      const nanoid = customAlphabet('0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ', 8);
+      user = new User({
+        googleId,
+        email,
+        profilePicture: picture,
+        // Use name from Google, or fallback to the email prefix
+        fullName: name || email.split('@')[0],
+        referralCode: nanoid(), // Generate a new referral code
+        packageUSD: 0,
+      });
+      await user.save();
+    }
   }
 
-  // 3. Generate our own application JWT
+  // 5. Generate our application JWT
   const appPayload = {
     id: user.userId,
     role: 'user',
@@ -63,6 +75,30 @@ export const loginWithGoogle = async (idToken: string) => {
   return { token, user };
 };
 
+
+/**
+ * Generates a JWT for a given user.
+ * @param user The user object.
+ * @returns A JWT token.
+ */
+export const generateToken = (user: any) => {
+  const payload = {
+    id: user.userId, // Ensure we use userId for consistency
+    role: user.role || 'user',
+  };
+
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    console.error('FATAL: JWT_SECRET is not defined in environment variables.');
+    throw new Error('Server configuration error.');
+  }
+
+  return jwt.sign(payload, secret, {
+    expiresIn: process.env.JWT_EXPIRES_IN || '7d',
+    algorithm: 'HS256',
+  });
+};
+
 /**
  * Logs in a user (Admin or Collector) and returns a JWT.
  * @param email The user's email.
@@ -74,7 +110,6 @@ export const login = async (email: string, password: string, role: 'admin' | 'co
   try {
     // 1. Find the user by email and role
     let user: any;
-    console.log(`Searching for ${role} with email: ${email}`);
     if (role === 'admin') {
       user = await Admin.findOne({ email }).select('+password');
     } else {
@@ -82,19 +117,14 @@ export const login = async (email: string, password: string, role: 'admin' | 'co
     }
 
     if (!user) {
-      console.log(`User not found for email: ${email}`);
       throw new CustomError('AuthorizationError', 'Invalid email or password');
     }
-    console.log(`User found: ${user.email}`);
 
     // 2. Compare passwords
-    console.log('Comparing passwords...');
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
-      console.log('Password comparison failed.');
       throw new CustomError('AuthorizationError', 'Invalid email or password');
     }
-    console.log('Password comparison successful.');
 
     // 3. Generate JWT
     const payload = {
@@ -108,16 +138,13 @@ export const login = async (email: string, password: string, role: 'admin' | 'co
       throw new Error('Server configuration error.');
     }
 
-    console.log('Generating JWT...');
     const token = jwt.sign(payload, secret, {
       expiresIn: process.env.JWT_EXPIRES_IN || '1d',
       algorithm: 'HS256',
     });
-    console.log('JWT generated successfully.');
 
     return { token, user };
   } catch (error) {
-    console.error('Error in auth.service.ts:', error);
     // Re-throw the error to be caught by the controller
     throw error;
   }
