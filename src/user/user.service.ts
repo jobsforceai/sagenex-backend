@@ -145,8 +145,10 @@ export const getDirectChildren = async (userIdentifier: string) => {
     return children;
   };
   
+  import OfflineDeposit from '../deposits/offline.deposit.model';
+  
   /**
-   * Updates a user's details with validation for parent changes.
+   * Updates a user's details with validation for parent and original sponsor changes.
    * @param userId The ID of the user to update.
    * @param updateData The data to update.
    * @returns The updated user document.
@@ -164,28 +166,40 @@ export const getDirectChildren = async (userIdentifier: string) => {
       throw new CustomError('NotFoundError', `User with ID '${userId}' not found.`);
     }
   
-    // 2. Handle Parent ID change with strict validation
+    // 2. Handle Parent ID change with advanced validation
     if (parentId && parentId !== user.parentId) {
-      // 2a. CRITICAL: Check if the user has any children.
-      const childCount = await User.countDocuments({ parentId: user.userId });
-      if (childCount > 0) {
-        throw new CustomError('ConflictError', 'Cannot change parent: User already has direct children.');
-      }
-  
-      // 2b. Validate the new parent
+      // 2a. Validate the new parent first
       const newParent = await User.findOne({ userId: parentId });
       if (!newParent) {
         throw new CustomError('NotFoundError', `New parent with ID '${parentId}' not found.`);
       }
   
-      // 2c. Check if the new parent has capacity
+      // 2b. Check if the new parent has capacity
       const parentChildCount = await User.countDocuments({ parentId: newParent.userId });
       if (parentChildCount >= 6) { // Assuming directWidthCap is 6
         throw new CustomError('ConflictError', `New parent '${newParent.fullName}' has reached their direct capacity.`);
       }
   
-      // 2d. If all checks pass, update the parentId
-      user.parentId = parentId;
+      // 2c. Logic for changing originalSponsorId (Full Reassignment)
+      if (user.originalSponsorId === user.parentId) {
+        // SAFETY CHECK: This is only allowed if the user has no financial history.
+        const verifiedDeposits = await OfflineDeposit.countDocuments({ userId: user.userId, status: 'VERIFIED' });
+        if (verifiedDeposits > 0) {
+          throw new CustomError('ConflictError', 'Cannot change original sponsor after a deposit has been verified.');
+        }
+        // If safe, reassign both original sponsor and parent.
+        user.originalSponsorId = parentId;
+        user.parentId = parentId;
+      } 
+      // 2d. Logic for changing parentId only (Placement Change)
+      else {
+        // CRITICAL: Check if the user has any children before changing placement.
+        const childCount = await User.countDocuments({ parentId: user.userId });
+        if (childCount > 0) {
+          throw new CustomError('ConflictError', 'Cannot change parent: User already has direct children.');
+        }
+        user.parentId = parentId;
+      }
     }
   
     // 3. Update other fields if provided
