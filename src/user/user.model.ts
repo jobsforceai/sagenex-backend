@@ -8,13 +8,16 @@ export interface IUser extends Document {
   email: string;
   phone: string;
   profilePicture?: string;
-  sponsorId: string | null;
+  originalSponsorId: string | null;
+  parentId: string | null;
+  isSplitSponsor: boolean;
   referralCode: string;
   packageUSD: number;
   pvPoints: number;
   dateJoined: Date;
   status: 'active' | 'inactive';
   salary: number;
+  isPackageActive: boolean;
 }
 
 const userSchema = new Schema<IUser>({
@@ -24,13 +27,16 @@ const userSchema = new Schema<IUser>({
   email: { type: String, required: true, unique: true, trim: true, lowercase: true },
   phone: { type: String, trim: true },
   profilePicture: { type: String },
-  sponsorId: { type: String, default: null, index: true },
+  originalSponsorId: { type: String, default: null, index: true },
+  parentId: { type: String, default: null, index: true },
+  isSplitSponsor: { type: Boolean, default: false },
   referralCode: { type: String, required: true, unique: true },
   packageUSD: { type: Number, required: true, default: 0 },
   pvPoints: { type: Number, default: 0 },
   dateJoined: { type: Date, default: Date.now },
   status: { type: String, enum: ['active', 'inactive'], default: 'active' },
   salary: { type: Number, default: 0 },
+  isPackageActive: { type: Boolean, default: false },
 }, { timestamps: true });
 
 // Auto-increment userId before saving a new user

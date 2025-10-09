@@ -5,6 +5,61 @@ import { CustomError } from '../helpers/error.helper';
 import WalletSummary from '../wallet/wallet.summary.model';
 
 /**
+ * Gets a paginated, searchable, and sortable list of all users.
+ * @param options - Options for pagination, searching, and sorting.
+ * @returns An object containing the list of users and pagination details.
+ */
+export const getAllUsers = async (options: {
+  page?: number;
+  limit?: number;
+  search?: string;
+  sortBy?: string;
+  sortOrder?: 'asc' | 'desc';
+}) => {
+  const {
+    page = 1,
+    limit = 10,
+    search = '',
+    sortBy = 'userId',
+    sortOrder = 'asc',
+  } = options;
+
+  // 1. Build Search Query
+  const query: any = {};
+  if (search) {
+    const searchRegex = new RegExp(search, 'i'); // Case-insensitive search
+    query.$or = [
+      { fullName: searchRegex },
+      { email: searchRegex },
+      { userId: searchRegex },
+      { referralCode: searchRegex },
+    ];
+  }
+
+  // 2. Build Sort Options
+  const sortOptions: { [key: string]: 1 | -1 } = {};
+  sortOptions[sortBy] = sortOrder === 'asc' ? 1 : -1;
+
+  // 3. Execute Query with Sorting and Pagination
+  const users = await User.find(query)
+    .sort(sortOptions)
+    .skip((page - 1) * limit)
+    .limit(limit)
+    .lean();
+
+  // 4. Get Total Count for Pagination
+  const totalUsers = await User.countDocuments(query);
+  const pagination = {
+    currentPage: page,
+    totalPages: Math.ceil(totalUsers / limit),
+    totalUsers,
+  };
+
+  return { users, pagination };
+};
+
+
+/**
  * Gets the dashboard data for a specific user.
  * @param userId The ID of the user.
  * @returns An object containing the user's profile, package info, and wallet summary.
@@ -66,3 +121,83 @@ export const getReferralTree = async (userId: string, maxDepth: number) => {
   }
   return tree;
 };
+
+/**
+ * Gets a list of direct children for a specific user.
+ * @param userId The ID of the parent user.
+ * @returns A list of the user's direct children, containing only their userId and fullName.
+ */
+export const getDirectChildren = async (userIdentifier: string) => {
+  // 1. Verify the parent user exists by either userId or referralCode
+  const parent = await User.findOne({
+    $or: [{ userId: userIdentifier }, { referralCode: userIdentifier }],
+  }).lean();
+  
+  if (!parent) {
+    throw new CustomError('NotFoundError', `User with ID or Referral Code '${userIdentifier}' not found.`);
+  }
+
+  // 2. Fetch direct children using the definitive parent userId
+    const children = await User.find({ parentId: parent.userId })
+      .select('userId fullName')
+      .lean();
+  
+    return children;
+  };
+  
+  /**
+   * Updates a user's details with validation for parent changes.
+   * @param userId The ID of the user to update.
+   * @param updateData The data to update.
+   * @returns The updated user document.
+   */
+  export const updateUser = async (userId: string, updateData: {
+    fullName?: string;
+    phone?: string;
+    parentId?: string;
+  }) => {
+    const { fullName, phone, parentId } = updateData;
+  
+    // 1. Find the user
+    const user = await User.findOne({ userId });
+    if (!user) {
+      throw new CustomError('NotFoundError', `User with ID '${userId}' not found.`);
+    }
+  
+    // 2. Handle Parent ID change with strict validation
+    if (parentId && parentId !== user.parentId) {
+      // 2a. CRITICAL: Check if the user has any children.
+      const childCount = await User.countDocuments({ parentId: user.userId });
+      if (childCount > 0) {
+        throw new CustomError('ConflictError', 'Cannot change parent: User already has direct children.');
+      }
+  
+      // 2b. Validate the new parent
+      const newParent = await User.findOne({ userId: parentId });
+      if (!newParent) {
+        throw new CustomError('NotFoundError', `New parent with ID '${parentId}' not found.`);
+      }
+  
+      // 2c. Check if the new parent has capacity
+      const parentChildCount = await User.countDocuments({ parentId: newParent.userId });
+      if (parentChildCount >= 6) { // Assuming directWidthCap is 6
+        throw new CustomError('ConflictError', `New parent '${newParent.fullName}' has reached their direct capacity.`);
+      }
+  
+      // 2d. If all checks pass, update the parentId
+      user.parentId = parentId;
+    }
+  
+    // 3. Update other fields if provided
+    if (fullName) {
+      user.fullName = fullName;
+    }
+    if (phone) {
+      user.phone = phone;
+    }
+  
+    // 4. Save and return the updated user
+    await user.save();
+    return user;
+  };
+  

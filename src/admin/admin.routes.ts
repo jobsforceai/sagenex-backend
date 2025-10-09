@@ -23,6 +23,12 @@ router.get('/users', adminController.getAllUsers);
 // Route to get a single user by ID
 router.get('/users/:userId', adminController.getUser);
 
+// Route to get the direct children for a user (for designee selection)
+router.get('/users/:userId/children', adminController.getDirectChildren);
+
+// Route to update a single user by ID
+router.patch('/users/:userId', adminController.updateUser);
+
 // Route to delete a single user by ID
 router.delete('/users/:userId', adminController.deleteUser);
 

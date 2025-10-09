@@ -15,7 +15,11 @@ export function getTieredROIRate(packageUSD: number): number {
   return 0; // No ROI for packages less than 50
 }
 
-export const DIRECT_REFERRAL_PCT = 0.10; // 10%
+// The direct bonus percentage paid to the original sponsor on a user's FIRST deposit.
+export const FIRST_DEPOSIT_DIRECT_BONUS_PCT = 0.10; // 10%
+
+// The direct bonus percentage paid to the PARENT on all SUBSEQUENT deposits (package upgrades).
+export const SUBSEQUENT_DEPOSIT_DIRECT_BONUS_PCT = 0.10; // 10% - Currently the same, but can be changed independently.
 
 // Unilevel bonuses for levels 1 through 6
 export const UNILEVEL_PCTS = [

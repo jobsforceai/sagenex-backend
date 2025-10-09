@@ -7,36 +7,40 @@ export interface ReferralTreeNode {
   email: string;
   packageUSD: number;
   dateJoined: Date;
+  isSplitSponsor: boolean;
+  originalSponsorId: string | null;
   children: ReferralTreeNode[];
 }
 
 /**
- * Recursively fetches the children (direct referrals) for a given user ID.
- * @param sponsorId The ID of the user whose children are to be fetched.
+ * Recursively fetches the children (direct placements) for a given user ID.
+ * @param parentId The ID of the user whose children are to be fetched.
  * @param currentDepth The current depth in the tree.
  * @param maxDepth The maximum depth to fetch.
  * @returns A promise that resolves to an array of tree nodes.
  */
-const findChildren = async (sponsorId: string, currentDepth: number, maxDepth: number): Promise<ReferralTreeNode[]> => {
+const findChildren = async (parentId: string, currentDepth: number, maxDepth: number): Promise<ReferralTreeNode[]> => {
   if (currentDepth >= maxDepth) {
     return [];
   }
 
-  // Find all users sponsored by the current user
-  const directReferrals = await User.find({ sponsorId }).lean();
+  // Find all users placed directly under the current user
+  const directChildren = await User.find({ parentId }).lean();
 
   const children: ReferralTreeNode[] = [];
 
-  for (const referral of directReferrals) {
-    // Recursively find the children of the current referral
-    const grandchildren = await findChildren(referral.userId, currentDepth + 1, maxDepth);
+  for (const child of directChildren) {
+    // Recursively find the children of the current child
+    const grandchildren = await findChildren(child.userId, currentDepth + 1, maxDepth);
     
     children.push({
-      userId: referral.userId,
-      fullName: referral.fullName,
-      email: referral.email,
-      packageUSD: referral.packageUSD,
-      dateJoined: referral.dateJoined,
+      userId: child.userId,
+      fullName: child.fullName,
+      email: child.email,
+      packageUSD: child.packageUSD,
+      dateJoined: child.dateJoined,
+      isSplitSponsor: child.isSplitSponsor,
+      originalSponsorId: child.originalSponsorId,
       children: grandchildren,
     });
   }
@@ -66,6 +70,8 @@ export const buildReferralTree = async (startUserId: string, maxDepth: number = 
     email: rootUser.email,
     packageUSD: rootUser.packageUSD,
     dateJoined: rootUser.dateJoined,
+    isSplitSponsor: rootUser.isSplitSponsor,
+    originalSponsorId: rootUser.originalSponsorId,
     children: children,
   };
 

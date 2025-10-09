@@ -15,6 +15,7 @@ export interface IOfflineDeposit extends Document {
   status: DepositStatus;
   createdAt: Date;
   verifiedAt?: Date;
+  lineageSnapshot?: Record<string, unknown>;
 }
 
 const offlineDepositSchema = new Schema<IOfflineDeposit>({
@@ -29,6 +30,7 @@ const offlineDepositSchema = new Schema<IOfflineDeposit>({
   proofUrl: { type: String },
   status: { type: String, required: true, enum: ['PENDING', 'VERIFIED', 'REJECTED'], default: 'PENDING' },
   verifiedAt: { type: Date },
+  lineageSnapshot: { type: Schema.Types.Mixed },
 }, { timestamps: { createdAt: true, updatedAt: true } });
 
 const OfflineDeposit = model<IOfflineDeposit>('OfflineDeposit', offlineDepositSchema);

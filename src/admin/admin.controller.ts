@@ -2,76 +2,62 @@ import { Request, Response } from 'express';
 import User from '../user/user.model';
 import { calculateMonthlyPayouts } from './payout.service';
 import * as adminService from './admin.service';
+import * as userService from '../user/user.service';
 import { customAlphabet } from 'nanoid';
 import Collector from '../collector/collector.model';
 import { sendWelcomeEmail } from '../email/email.service';
 import { buildReferralTree } from '../helpers/tree.helper';
 import CurrencyRate from '../rates/currency.model';
+import { companyConfig } from '../config/company';
 
 /**
  * Onboards a new user. This is an admin-only action.
  */
 export const onboardUser = async (req: Request, res: Response) => {
-  const { fullName, email, phone, sponsorId, dateJoined } = req.body;
-
-  // 1. Validation
-  if (!fullName || !email) {
-    return res.status(400).json({ message: 'Full name and email are required.' });
-  }
-  const emailExists = await User.findOne({ email });
-  if (emailExists) {
-    return res.status(409).json({ message: 'Email already exists.' });
-  }
-
-  // 2. Resolve Sponsor
-  let resolvedSponsorId: string | null = null;
-  if (sponsorId) {
-    const sponsor = await User.findOne({
-      $or: [{ userId: sponsorId }, { referralCode: sponsorId }]
-    });
-    if (!sponsor) {
-      return res.status(404).json({ message: `Sponsor with ID or Referral Code '${sponsorId}' not found.` });
-    }
-    resolvedSponsorId = sponsor.userId;
-  }
-
-  // 3. Create User
   try {
-    const nanoid = customAlphabet('0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ', 8);
-    const newUser = new User({
-      fullName,
-      email,
-      phone,
-      packageUSD: 0, // Package is now 0 by default
-      sponsorId: resolvedSponsorId,
-      dateJoined: dateJoined ? new Date(dateJoined) : new Date(),
-      pvPoints: 0, // PV points are 0 by default
-      referralCode: nanoid(),
-    });
-
-    await newUser.save();
-
-    // 4. Send welcome email (fire and forget)
-    sendWelcomeEmail(newUser, sponsorId);
-
+    const newUser = await adminService.onboardUser(req.body);
     res.status(201).json({ message: 'User onboarded successfully.', user: newUser });
-  } catch (error) {
+  } catch (error: any) {
+    if (error.name === 'ValidationError' || error.name === 'NotFoundError') {
+      return res.status(400).json({ message: error.message });
+    }
+    if (error.name === 'ConflictError') {
+      return res.status(409).json({ message: error.message });
+    }
     res.status(500).json({ message: 'Error creating user.', error });
   }
 };
 
 /**
- * Gets the referral tree for a specific user.
+ * Gets the referral tree for a specific user, including their parent.
  */
 export const getReferralTree = async (req: Request, res: Response) => {
-    // Logic remains the same
     try {
         const { userId } = req.params;
+        
+        // 1. Build the user's downline tree
         const tree = await buildReferralTree(userId);
         if (!tree) {
             return res.status(404).json({ message: `User with ID '${userId}' not found.` });
         }
-        res.status(200).json(tree);
+
+        // 2. Find the user's parent
+        const user = await User.findOne({ userId }).lean();
+        let parent = null;
+        if (user && user.parentId) {
+            if (user.parentId === companyConfig.sponsorId) {
+                parent = {
+                    userId: companyConfig.sponsorId,
+                    fullName: 'SAGENEX',
+                };
+            } else {
+                parent = await User.findOne({ userId: user.parentId }).select('userId fullName').lean();
+            }
+        }
+
+        // 3. Send the combined response
+        res.status(200).json({ tree, parent });
+
     } catch (error) {
         res.status(500).json({ message: 'Error fetching referral tree.', error });
     }
@@ -91,44 +77,19 @@ export const getMonthlyPayouts = async (req: Request, res: Response) => {
 };
 
 /**
- * Gets a paginated and searchable list of all onboarded users.
+ * Gets a paginated, searchable, and sortable list of all onboarded users.
  */
 export const getAllUsers = async (req: Request, res: Response) => {
   try {
-    const page = parseInt(req.query.page as string) || 1;
-    const limit = parseInt(req.query.limit as string) || 10;
-    const search = req.query.search as string;
-
-    const query: any = {};
-    if (search) {
-      const searchRegex = new RegExp(search, 'i'); // Case-insensitive search
-      query.$or = [
-        { fullName: searchRegex },
-        { email: searchRegex },
-        { userId: searchRegex },
-        { referralCode: searchRegex },
-      ];
-    }
-
-    const users = await User.find(query)
-      .sort({ dateJoined: -1 })
-      .skip((page - 1) * limit)
-      .limit(limit)
-      .lean();
-
-    const totalUsers = await User.countDocuments(query);
-    const pagination = {
-      currentPage: page,
-      totalPages: Math.ceil(totalUsers / limit),
-      totalUsers,
+    const options = {
+      page: parseInt(req.query.page as string) || 1,
+      limit: parseInt(req.query.limit as string) || 10,
+      search: req.query.search as string,
+      sortBy: req.query.sortBy as string,
+      sortOrder: req.query.sortOrder as 'asc' | 'desc',
     };
 
-    // --- DEBUG LOGGING ---
-    console.log('--- Sending data from getAllUsers ---');
-    console.log('Users Count:', users.length);
-    console.log('Pagination:', JSON.stringify(pagination, null, 2));
-    console.log('------------------------------------');
-    // --- END DEBUG LOGGING ---
+    const { users, pagination } = await userService.getAllUsers(options);
 
     res.status(200).json({
       users,
@@ -153,6 +114,39 @@ export const getUser = async (req: Request, res: Response) => {
         }
         res.status(500).json({ message: 'Error fetching user.', error });
     }
+};
+
+/**
+ * Gets the direct children for a specific user.
+ */
+export const getDirectChildren = async (req: Request, res: Response) => {
+  try {
+    const children = await userService.getDirectChildren(req.params.userId);
+    res.status(200).json({ children });
+  } catch (error: any) {
+    if (error.name === 'NotFoundError') {
+      return res.status(404).json({ message: error.message });
+    }
+    res.status(500).json({ message: 'Error fetching direct children.', error });
+  }
+};
+
+/**
+ * Updates a single user's details.
+ */
+export const updateUser = async (req: Request, res: Response) => {
+  try {
+    const updatedUser = await userService.updateUser(req.params.userId, req.body);
+    res.status(200).json({ message: 'User updated successfully.', user: updatedUser });
+  } catch (error: any) {
+    if (error.name === 'NotFoundError') {
+      return res.status(404).json({ message: error.message });
+    }
+    if (error.name === 'ConflictError' || error.name === 'ValidationError') {
+      return res.status(409).json({ message: error.message });
+    }
+    res.status(500).json({ message: 'Error updating user.', error });
+  }
 };
 
 /**
