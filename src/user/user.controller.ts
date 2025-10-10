@@ -52,6 +52,72 @@ export const getReferralTree = async (req: Request, res: Response) => {
         res.status(500).json({ message: 'Error building referral tree.', error: error.message });
       }
     };
+
+/**
+ * Gets a summary of direct referrals for the logged-in user.
+ */
+export const getReferralSummary = async (req: Request, res: Response) => {
+  const user = (req as any).user;
+
+  try {
+    const summary = await userService.getReferralSummary(user.userId);
+    res.status(200).json(summary);
+  } catch (error: any) {
+    console.error(`Error fetching referral summary for user ${user.userId}:`, error);
+    res.status(500).json({ message: 'Error fetching referral summary.', error: error.message });
+  }
+};
+
+/**
+ * Gets the rank and progress details for the logged-in user.
+ */
+export const getRankAndProgress = async (req: Request, res: Response) => {
+  const user = (req as any).user;
+
+  try {
+    const rankData = await userService.getRankAndProgress(user.userId);
+    res.status(200).json(rankData);
+  } catch (error: any) {
+    console.error(`Error fetching rank and progress for user ${user.userId}:`, error);
+    res.status(500).json({ message: 'Error fetching rank and progress data.', error: error.message });
+  }
+};
+
+/**
+ * Gets the financial summary for the logged-in user.
+ */
+export const getFinancialSummary = async (req: Request, res: Response) => {
+  const user = (req as any).user;
+
+  try {
+    const summary = await userService.getFinancialSummary(user.userId);
+    res.status(200).json(summary);
+  } catch (error: any) {
+    if (error.name === 'NotFoundError') {
+      return res.status(404).json({ message: error.message });
+    }
+    console.error(`Error fetching financial summary for user ${user.userId}:`, error);
+    res.status(500).json({ message: 'Error fetching financial summary.', error: error.message });
+  }
+};
+
+/**
+ * Gets the leaderboard data.
+ */
+export const getLeaderboard = async (req: Request, res: Response) => {
+  const user = (req as any).user;
+
+  try {
+    const leaderboardData = await userService.getLeaderboard(user.userId);
+    res.status(200).json(leaderboardData);
+  } catch (error: any) {
+    if (error.name === 'NotFoundError') {
+      return res.status(404).json({ message: error.message });
+    }
+    console.error(`Error fetching leaderboard for user ${user.userId}:`, error);
+    res.status(500).json({ message: 'Error fetching leaderboard data.', error: error.message });
+  }
+};
     
     /**
      * Gets the profile for the logged-in user.

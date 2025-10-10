@@ -20,6 +20,18 @@ router.get('/wallet', userController.getWalletHistory);
 // Route to get the user's referral tree
 router.get('/team/tree', userController.getReferralTree);
 
+// Route to get the user's referral summary
+router.get('/team/summary', userController.getReferralSummary);
+
+// Route to get the user's rank and progress
+router.get('/rank-progress', userController.getRankAndProgress);
+
+// Route to get the user's financial summary
+router.get('/financial-summary', userController.getFinancialSummary);
+
+// Route to get the leaderboard
+router.get('/leaderboard', userController.getLeaderboard);
+
 // Route to get the user's monthly payout history
 router.get('/payouts', payoutsController.getMonthlyPayouts);
 

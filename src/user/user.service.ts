@@ -86,7 +86,7 @@ export const getDashboardData = async (userId: string) => {
       email: user.email,
       profilePicture: user.profilePicture,
       referralCode: user.referralCode,
-      dateJoined: user.dateJoined,
+      joinDate: user.dateJoined,
     },
     package: {
       packageUSD: user.packageUSD,
@@ -247,6 +247,275 @@ export const getDirectChildren = async (userIdentifier: string) => {
     await user.save();
     return user;
   };
+
+
+/**
+ * Recursively calculates the total investment volume of a user's downline.
+ * @param userId The ID of the user at the top of the tree.
+ * @returns The total sum of packageUSD for all users in the downline.
+ */
+const getDownlineVolume = async (userId: string): Promise<number> => {
+  let volume = 0;
+  // Find all direct children of the current user
+  const children = await User.find({ parentId: userId }).select('userId packageUSD').lean();
+
+  // This loop iterates through the direct children
+  for (const child of children) {
+    // Add the direct child's own investment to the volume
+    volume += child.packageUSD;
+    // Recursively call the function for each child to get their downline's volume
+    volume += await getDownlineVolume(child.userId);
+  }
+
+  return volume;
+};
+
+/**
+ * Gets a detailed summary of a user's direct referrals and total downline volume.
+ * @param userId The ID of the user whose referrals are to be fetched.
+ * @returns An object containing the referral summary.
+ */
+export const getReferralSummary = async (userId: string) => {
+  // 1. Find all direct children of the user
+  const directReferrals = await User.find({ parentId: userId }).lean();
+
+  let investedCount = 0;
+  const referralsDetails = [];
+
+  // 2. Process each referral to determine their status
+  for (const referral of directReferrals) {
+    // Check investment status
+    const hasInvested = referral.packageUSD > 0;
+    if (hasInvested) {
+      investedCount++;
+    }
+
+    // Check activity status by counting their direct children
+    const childCount = await User.countDocuments({ parentId: referral.userId });
+    const isActive = childCount >= 6;
+
+    referralsDetails.push({
+      userId: referral.userId,
+      fullName: referral.fullName,
+      dateJoined: referral.dateJoined,
+      investmentStatus: hasInvested ? 'Invested' : 'Not Invested',
+      activityStatus: isActive ? 'Active' : 'Inactive',
+      packageUSD: referral.packageUSD,
+    });
+  }
+
+  // 3. Calculate total downline volume using the recursive helper
+  const totalDownlineVolume = await getDownlineVolume(userId);
+
+  // 4. Compile the final summary object
+  return {
+    totalReferrals: directReferrals.length,
+    investedCount,
+    notInvestedCount: directReferrals.length - investedCount,
+    totalDownlineVolume,
+    referrals: referralsDetails,
+  };
+};
+
+
+/**
+ * Recursively calculates the total number of members in a user's downline.
+ * @param userId The ID of the user at the top of the tree.
+ * @returns The total count of all users in the downline.
+ */
+const getDownlineCount = async (userId: string): Promise<number> => {
+  const children = await User.find({ parentId: userId }).select('userId').lean();
+  let count = children.length;
+
+  for (const child of children) {
+    count += await getDownlineCount(child.userId);
+  }
+
+  return count;
+};
+
+const ranks = [
+  { level: 0, name: 'Member', directs: 0, team: 0, salary: 0 },
+  { level: 1, name: 'Starter', directs: 6, team: 0, salary: 0 },
+  { level: 2, name: 'Builder', directs: 6, team: 36, salary: 563 },
+  { level: 3, name: 'Leader', directs: 6, team: 200, salary: 1128 },
+  { level: 4, name: 'Manager', directs: 0, team: 1000, salary: 2255 },
+  { level: 5, name: 'Director', directs: 0, team: 7000, salary: 3383 },
+  { level: 6, name: 'Crown', directs: 0, team: 46000, salary: 5600 },
+];
+
+/**
+ * Gets the user's current rank, progress towards the next rank, and perks.
+ * @param userId The ID of the user.
+ * @returns An object with the user's rank and progress details.
+ */
+export const getRankAndProgress = async (userId: string) => {
+  const directsCount = await User.countDocuments({ parentId: userId });
+  const teamSize = await getDownlineCount(userId);
+
+  let currentRank = ranks[0];
+  for (let i = ranks.length - 1; i >= 0; i--) {
+    const rank = ranks[i];
+    const directsMet = !rank.directs || directsCount >= rank.directs;
+    const teamMet = !rank.team || teamSize >= rank.team;
+    if (directsMet && teamMet) {
+      currentRank = rank;
+      break;
+    }
+  }
+
+  const nextRank = ranks.find(r => r.level === currentRank.level + 1);
+  let progressPercentage = 100;
+  let progressDetails = {};
+
+  if (nextRank) {
+    const directsNeeded = nextRank.directs > 0 ? (directsCount / nextRank.directs) : 1;
+    const teamNeeded = nextRank.team > 0 ? (teamSize / nextRank.team) : 1;
+    
+    // Weighted progress calculation
+    if (nextRank.directs > 0 && nextRank.team > 0) {
+      progressPercentage = Math.min(100, ((directsNeeded * 0.5) + (teamNeeded * 0.5)) * 100);
+    } else if (nextRank.directs > 0) {
+      progressPercentage = Math.min(100, directsNeeded * 100);
+    } else {
+      progressPercentage = Math.min(100, teamNeeded * 100);
+    }
+
+    progressDetails = {
+      nextRankName: nextRank.name,
+      requirements: {
+        directs: { current: directsCount, required: nextRank.directs },
+        team: { current: teamSize, required: nextRank.team },
+      }
+    };
+  }
+
+  return {
+    currentRank: {
+      name: currentRank.name,
+      badge: `${currentRank.name} Badge`,
+      salary: currentRank.salary,
+    },
+    progress: {
+      percentage: Math.round(progressPercentage),
+      ...progressDetails
+    }
+  };
+};
+
+import Payout from '../payouts/payout.model';
+
+/**
+ * Gets a comprehensive financial summary for a specific user.
+ * @param userId The ID of the user.
+ * @returns An object containing the user's financial summary and payout history.
+ */
+export const getFinancialSummary = async (userId: string) => {
+  // 1. Fetch user and ledger entries in parallel
+  const userPromise = User.findOne({ userId }).lean();
+  const ledgerEntriesPromise = WalletLedger.find({ userId }).lean();
+  const payoutsPromise = Payout.find({ userId }).sort({ month: -1 }).lean();
+
+  const [user, ledgerEntries, payouts] = await Promise.all([
+    userPromise,
+    ledgerEntriesPromise,
+    payoutsPromise,
+  ]);
+
+  if (!user) {
+    throw new CustomError('NotFoundError', `User with ID '${userId}' not found.`);
+  }
+
+  // 2. Calculate earnings from ledger entries
+  let referralEarnings = 0;
+  let monthlyIncentive = 0;
+
+  for (const entry of ledgerEntries) {
+    if (entry.type === 'DIRECT' || entry.type === 'UNILEVEL') {
+      referralEarnings += entry.amount;
+    }
+    if (entry.type === 'SALARY') {
+      monthlyIncentive += entry.amount;
+    }
+  }
+
+  // 3. Compile the summary object
+  return {
+    investedPrincipal: user.packageUSD,
+    referralEarnings,
+    oneTimePromotionBonus: 0, // Not implemented yet
+    monthlyIncentive,
+    payoutHistory: payouts,
+  };
+};
+
+
+/**
+ * Generates a leaderboard with the current user ranked 3rd or 4th.
+ * @param userId The ID of the logged-in user.
+ * @returns A sorted list of users for the leaderboard.
+ */
+export const getLeaderboard = async (userId: string) => {
+  // 1. Fetch real user's data
+  const user = await User.findOne({ userId }).lean();
+  const summary = await WalletSummary.findOne({ userId }).lean();
+  if (!user) {
+    throw new CustomError('NotFoundError', `User with ID '${userId}' not found.`);
+  }
+
+  const teamVolume = await getDownlineVolume(userId);
+  const packagesSold = await User.countDocuments({ parentId: userId, packageUSD: { $gt: 0 } });
+  const earnings = summary?.lifetimeEarnings ?? 0;
+
+  const currentUser = {
+    userId: user.userId,
+    fullName: user.fullName,
+    profilePicture: user.profilePicture,
+    teamVolume,
+    packagesSold,
+    earnings,
+  };
+
+  // 2. Generate dummy data
+  const dummyUsers = [
+    // Users ranked higher than the current user
+    { userId: null, fullName: 'Rohan Sharma', profilePicture: null, teamVolume: teamVolume * 2.5, packagesSold: Math.round(packagesSold * 3), earnings: earnings * 2.8 },
+    { userId: null, fullName: 'Priya Patel', profilePicture: null, teamVolume: teamVolume * 1.8, packagesSold: Math.round(packagesSold * 2), earnings: earnings * 2.1 },
+    // Users ranked lower
+    { userId: null, fullName: 'Arjun Singh', profilePicture: null, teamVolume: teamVolume * 0.8, packagesSold: Math.round(packagesSold * 1.2), earnings: earnings * 0.9 },
+    { userId: null, fullName: 'Sneha Reddy', profilePicture: null, teamVolume: teamVolume * 0.6, packagesSold: packagesSold, earnings: earnings * 0.7 },
+    { userId: null, fullName: 'Vikram Kumar', profilePicture: null, teamVolume: teamVolume * 0.4, packagesSold: Math.round(packagesSold * 0.8), earnings: earnings * 0.5 },
+    { userId: null, fullName: 'Anjali Gupta', profilePicture: null, teamVolume: teamVolume * 0.2, packagesSold: Math.round(packagesSold * 0.5), earnings: earnings * 0.3 },
+    { userId: null, fullName: 'Karan Malhotra', profilePicture: null, teamVolume: teamVolume * 0.1, packagesSold: Math.round(packagesSold * 0.3), earnings: earnings * 0.2 },
+  ];
+
+  // 3. Combine and sort
+  const leaderboard = [...dummyUsers, currentUser]
+    .sort((a, b) => b.teamVolume - a.teamVolume)
+    .map((u, index) => ({
+      rank: index + 1,
+      ...u,
+    }));
+
+  // Ensure current user is 3rd or 4th by adding another high-ranker if needed
+  const userRank = leaderboard.find(u => u.userId === userId)?.rank;
+  if (userRank && userRank < 3) {
+    leaderboard.unshift({
+      rank: 0,
+      userId: null,
+      fullName: 'Aditya Rao',
+      profilePicture: null,
+      teamVolume: teamVolume * 4,
+      packagesSold: Math.round(packagesSold * 5),
+      earnings: earnings * 5,
+    });
+    // Re-rank
+    leaderboard.sort((a, b) => b.teamVolume - a.teamVolume).forEach((u, index) => u.rank = index + 1);
+  }
+
+
+  return leaderboard.slice(0, 10); // Return top 10
+};
 
 /**
  * Gets the profile data for a specific user.

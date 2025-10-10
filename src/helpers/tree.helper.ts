@@ -9,6 +9,7 @@ export interface ReferralTreeNode {
   dateJoined: Date;
   isSplitSponsor: boolean;
   originalSponsorId: string | null;
+  activityStatus: 'Active' | 'Inactive';
   children: ReferralTreeNode[];
 }
 
@@ -33,6 +34,10 @@ const findChildren = async (parentId: string, currentDepth: number, maxDepth: nu
     // Recursively find the children of the current child
     const grandchildren = await findChildren(child.userId, currentDepth + 1, maxDepth);
     
+    // Check activity status by counting their direct children
+    const childCount = await User.countDocuments({ parentId: child.userId });
+    const isActive = childCount >= 6;
+
     children.push({
       userId: child.userId,
       fullName: child.fullName,
@@ -41,6 +46,7 @@ const findChildren = async (parentId: string, currentDepth: number, maxDepth: nu
       dateJoined: child.dateJoined,
       isSplitSponsor: child.isSplitSponsor,
       originalSponsorId: child.originalSponsorId,
+      activityStatus: isActive ? 'Active' : 'Inactive',
       children: grandchildren,
     });
   }
@@ -64,6 +70,10 @@ export const buildReferralTree = async (startUserId: string, maxDepth: number = 
   // Start the recursive process to find all children
   const children = await findChildren(rootUser.userId, 0, maxDepth);
 
+  // Calculate activity status for the root user
+  const rootChildCount = await User.countDocuments({ parentId: rootUser.userId });
+  const isRootActive = rootChildCount >= 6;
+
   const tree: ReferralTreeNode = {
     userId: rootUser.userId,
     fullName: rootUser.fullName,
@@ -72,6 +82,7 @@ export const buildReferralTree = async (startUserId: string, maxDepth: number = 
     dateJoined: rootUser.dateJoined,
     isSplitSponsor: rootUser.isSplitSponsor,
     originalSponsorId: rootUser.originalSponsorId,
+    activityStatus: isRootActive ? 'Active' : 'Inactive',
     children: children,
   };
 
