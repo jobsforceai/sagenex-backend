@@ -249,6 +249,36 @@ export const getDirectChildren = async (userIdentifier: string) => {
   };
 
 /**
+ * Gets the profile data for a specific user.
+ * @param userId The ID of the user.
+ * @returns An object containing the user's profile information.
+ */
+export const getUserProfile = async (userId: string) => {
+  const user = await User.findOne({ userId }).lean();
+  if (!user) {
+    throw new CustomError('NotFoundError', `User with ID '${userId}' not found.`);
+  }
+
+  // Return a comprehensive profile object, excluding sensitive or internal fields
+  return {
+    userId: user.userId,
+    fullName: user.fullName,
+    email: user.email,
+    phone: user.phone,
+    profilePicture: user.profilePicture,
+    referralCode: user.referralCode,
+    originalSponsorId: user.originalSponsorId,
+    parentId: user.parentId,
+    isSplitSponsor: user.isSplitSponsor,
+    packageUSD: user.packageUSD,
+    pvPoints: user.pvPoints,
+    dateJoined: user.dateJoined,
+    status: user.status,
+    isPackageActive: user.isPackageActive,
+  };
+};
+
+/**
  * Creates a new user with validation and width-capped unilevel placement logic.
  * This is the single source of truth for creating any new user.
  * @param userData The data for the new user.

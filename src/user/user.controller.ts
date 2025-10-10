@@ -49,6 +49,25 @@ export const getReferralTree = async (req: Request, res: Response) => {
       return res.status(404).json({ message: error.message });
     }
     console.error(`Error fetching referral tree for user ${user.userId}:`, error);
-    res.status(500).json({ message: 'Error building referral tree.', error: error.message });
-  }
-};
+        res.status(500).json({ message: 'Error building referral tree.', error: error.message });
+      }
+    };
+    
+    /**
+     * Gets the profile for the logged-in user.
+     */
+    export const getProfile = async (req: Request, res: Response) => {
+      const user = (req as any).user;
+    
+      try {
+        const profileData = await userService.getUserProfile(user.userId);
+        res.status(200).json(profileData);
+      } catch (error: any) {
+        if (error.name === 'NotFoundError') {
+          return res.status(404).json({ message: error.message });
+        }
+        console.error(`Error fetching profile for user ${user.userId}:`, error);
+        res.status(500).json({ message: 'Error fetching profile data.', error: error.message });
+      }
+    };
+    

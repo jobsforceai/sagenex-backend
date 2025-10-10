@@ -11,6 +11,9 @@ router.use(protectUser);
 // Route to get dashboard data
 router.get('/dashboard', userController.getDashboard);
 
+// Route to get the user's profile
+router.get('/profile', userController.getProfile);
+
 // Route to get wallet transaction history
 router.get('/wallet', userController.getWalletHistory);
 
