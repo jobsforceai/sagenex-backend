@@ -6,15 +6,17 @@ import Admin from '../admin/admin.model';
 import Collector from '../collector/collector.model';
 import { CustomError } from '../helpers/error.helper';
 import User from '../user/user.model';
+import * as userService from '../user/user.service';
 
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 /**
  * Handles Google Sign-In. Verifies the token, finds or creates a user, and returns a JWT.
  * @param idToken The ID token received from the frontend.
+ * @param sponsorId The optional sponsor code provided during sign-up.
  * @returns An object containing the JWT and user information.
  */
-export const loginWithGoogle = async (idToken: string) => {
+export const loginWithGoogle = async (idToken: string, sponsorId?: string) => {
   // 1. Verify the Google ID token
   const ticket = await googleClient.verifyIdToken({
     idToken,
@@ -40,18 +42,14 @@ export const loginWithGoogle = async (idToken: string) => {
       user.profilePicture = user.profilePicture || picture; // Update picture if not set
       await user.save();
     } else {
-      // 4. If no user exists, create a new one
-      const nanoid = customAlphabet('0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ', 8);
-      user = new User({
+      // 4. If no user exists, create a new one using the centralized service
+      user = await userService.createNewUser({
         googleId,
         email,
         profilePicture: picture,
-        // Use name from Google, or fallback to the email prefix
         fullName: name || email.split('@')[0],
-        referralCode: nanoid(), // Generate a new referral code
-        packageUSD: 0,
+        sponsorId, // Pass the sponsorId through (will default to SAGENEX-GOLD if undefined)
       });
-      await user.save();
     }
   }
 
@@ -73,6 +71,31 @@ export const loginWithGoogle = async (idToken: string) => {
   });
 
   return { token, user };
+};
+
+/**
+ * Checks if a user exists based on a Google ID token.
+ * @param idToken The ID token received from the frontend.
+ * @returns An object indicating if the user exists.
+ */
+export const checkUserWithGoogle = async (idToken: string) => {
+  // 1. Verify the Google ID token
+  const ticket = await googleClient.verifyIdToken({
+    idToken,
+    audience: process.env.GOOGLE_CLIENT_ID,
+  });
+  const payload = ticket.getPayload();
+
+  if (!payload || !payload.email || !payload.sub) {
+    throw new CustomError('AuthorizationError', 'Invalid Google token.');
+  }
+
+  const { email, sub: googleId } = payload;
+
+  // 2. Check if a user exists with either the Google ID or the email
+  const user = await User.findOne({ $or: [{ googleId }, { email }] });
+
+  return { exists: !!user };
 };
 
 

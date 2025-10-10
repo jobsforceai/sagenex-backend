@@ -42,8 +42,8 @@ export const getReferralTree = async (req: Request, res: Response) => {
   const maxDepth = req.query.depth ? parseInt(req.query.depth as string, 10) : 6; // Default to 6 levels
 
   try {
-    const tree = await userService.getReferralTree(user.userId, maxDepth);
-    res.status(200).json(tree);
+    const { tree, parent } = await userService.getReferralTree(user.userId, maxDepth);
+    res.status(200).json({ tree, parent });
   } catch (error: any) {
     if (error.name === 'NotFoundError') {
       return res.status(404).json({ message: error.message });

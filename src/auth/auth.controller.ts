@@ -5,14 +5,14 @@ import * as authService from './auth.service';
  * Handles Google Sign-In for users.
  */
 export const googleLoginController = async (req: Request, res: Response) => {
-  const { idToken } = req.body;
+  const { idToken, sponsorId } = req.body;
 
   if (!idToken) {
     return res.status(400).json({ message: 'Google ID token is required.' });
   }
 
   try {
-    const { token, user } = await authService.loginWithGoogle(idToken);
+    const { token, user } = await authService.loginWithGoogle(idToken, sponsorId);
     res.status(200).json({
       message: 'Google login successful.',
       token,
@@ -23,6 +23,28 @@ export const googleLoginController = async (req: Request, res: Response) => {
       return res.status(401).json({ message: error.message });
     }
     console.error('Google login error:', error);
+    res.status(500).json({ message: 'An internal server error occurred.' });
+  }
+};
+
+/**
+ * Checks if a user exists via Google Sign-In.
+ */
+export const googleCheckUserController = async (req: Request, res: Response) => {
+  const { idToken } = req.body;
+
+  if (!idToken) {
+    return res.status(400).json({ message: 'Google ID token is required.' });
+  }
+
+  try {
+    const result = await authService.checkUserWithGoogle(idToken);
+    res.status(200).json(result);
+  } catch (error: any) {
+    if (error.name === 'AuthorizationError') {
+      return res.status(401).json({ message: error.message });
+    }
+    console.error('Google check user error:', error);
     res.status(500).json({ message: 'An internal server error occurred.' });
   }
 };

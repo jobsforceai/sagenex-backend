@@ -1,8 +1,12 @@
-import WalletLedger from '../wallet/wallet.ledger.model';
 import { buildReferralTree } from '../helpers/tree.helper';
-import User from './user.model';
+import WalletLedger from '../wallet/wallet.ledger.model';
+import User, { IUser } from './user.model';
 import { CustomError } from '../helpers/error.helper';
 import WalletSummary from '../wallet/wallet.summary.model';
+import { companyConfig } from '../config/company';
+import { featureFlags } from '../config/features';
+import { sendWelcomeEmail } from '../email/email.service';
+import { customAlphabet } from 'nanoid';
 
 /**
  * Gets a paginated, searchable, and sortable list of all users.
@@ -109,17 +113,46 @@ export const getWalletHistory = async (userId: string) => {
 };
 
 /**
- * Gets the referral tree for a specific user.
+ * Gets the parent information for a given user.
+ * @param user The user document for whom to find the parent.
+ * @returns The parent's details or a default object for the company sponsor.
+ */
+export const getParentInfo = async (user: { parentId: string | null } | null) => {
+    if (!user || !user.parentId) {
+        return null;
+    }
+
+    if (user.parentId === companyConfig.sponsorId) {
+        return {
+            userId: companyConfig.sponsorId,
+            fullName: 'SAGENEX',
+        };
+    }
+
+    return User.findOne({ userId: user.parentId }).select('userId fullName').lean();
+};
+
+/**
+ * Gets the referral tree and parent for a specific user.
  * @param userId The ID of the user.
  * @param maxDepth The maximum depth of the tree to fetch.
- * @returns The user's referral tree.
+ * @returns The user's referral tree and their parent's info.
  */
 export const getReferralTree = async (userId: string, maxDepth: number) => {
-  const tree = await buildReferralTree(userId, maxDepth);
-  if (!tree) {
+  const user = await User.findOne({ userId }).lean();
+  if (!user) {
     throw new CustomError('NotFoundError', `User with ID '${userId}' not found.`);
   }
-  return tree;
+
+  const tree = await buildReferralTree(user.userId, maxDepth);
+  if (!tree) {
+    // This case should not be reached if the user was found, but is a safeguard.
+    throw new CustomError('NotFoundError', `Could not build tree for user with ID '${userId}'.`);
+  }
+  
+  const parent = await getParentInfo(user);
+
+  return { tree, parent };
 };
 
 /**
@@ -214,4 +247,96 @@ export const getDirectChildren = async (userIdentifier: string) => {
     await user.save();
     return user;
   };
+
+/**
+ * Creates a new user with validation and width-capped unilevel placement logic.
+ * This is the single source of truth for creating any new user.
+ * @param userData The data for the new user.
+ * @returns The newly created user document.
+ */
+export const createNewUser = async (userData: Partial<IUser> & { sponsorId?: string, placementDesigneeId?: string }) => {
+  const { fullName, email, phone, sponsorId, placementDesigneeId, dateJoined, googleId, profilePicture } = userData;
+
+  // 1. Basic Validation
+  if (!fullName || !email) {
+    throw new CustomError('ValidationError', 'Full name and email are required.');
+  }
+  const emailExists = await User.findOne({ email });
+  if (emailExists) {
+    throw new CustomError('ConflictError', 'Email already exists.');
+  }
+
+  let originalSponsorId: string | null = null;
+  let parentId: string | null = null;
+  let isSplitSponsor = false;
+
+  // 2. Resolve Sponsor and Determine Placement
+  const effectiveSponsorId = sponsorId || companyConfig.sponsorId;
+
+  if (effectiveSponsorId === companyConfig.sponsorId) {
+    // Case A: User is sponsored by the company
+    originalSponsorId = companyConfig.sponsorId;
+    parentId = companyConfig.sponsorId;
+  } else {
+    // Case B: User has a real sponsor
+    const originalSponsor = await User.findOne({ $or: [{ userId: effectiveSponsorId }, { referralCode: effectiveSponsorId }] });
+    if (!originalSponsor) {
+      throw new CustomError('NotFoundError', `Sponsor with ID or Referral Code '${effectiveSponsorId}' not found.`);
+    }
+    originalSponsorId = originalSponsor.userId;
+
+    const sponsorDirectCount = await User.countDocuments({ parentId: originalSponsor.userId });
+
+    if (sponsorDirectCount < featureFlags.directWidthCap) {
+      // Sponsor has capacity
+      if (placementDesigneeId) {
+        throw new CustomError('ValidationError', 'Designee not allowed; sponsor has capacity.');
+      }
+      parentId = originalSponsor.userId;
+    } else {
+      // Sponsor is full, designee is required
+      if (!placementDesigneeId) {
+        throw new CustomError('ValidationError', 'Sponsor is full; a placement designee is required.');
+      }
+
+      const designee = await User.findOne({ userId: placementDesigneeId });
+      if (!designee || designee.parentId !== originalSponsor.userId) {
+        throw new CustomError('ValidationError', 'Designee must be one of the sponsor’s direct children.');
+      }
+
+      const designeeDirectCount = await User.countDocuments({ parentId: designee.userId });
+      if (designeeDirectCount >= featureFlags.directWidthCap) {
+        throw new CustomError('ConflictError', 'Selected designee already has 6 directs. Pick a different designee.');
+      }
+      
+      parentId = designee.userId;
+      isSplitSponsor = true;
+    }
+  }
+
+  // 3. Create User
+  const nanoid = customAlphabet('0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ', 8);
+  const newUser = new User({
+    fullName,
+    email,
+    phone,
+    googleId,
+    profilePicture,
+    packageUSD: 0,
+    originalSponsorId,
+    parentId,
+    isSplitSponsor,
+    dateJoined: dateJoined ? new Date(dateJoined) : new Date(),
+    pvPoints: 0,
+    referralCode: nanoid(),
+  });
+
+  await newUser.save();
+
+  // 4. Send welcome email (fire and forget)
+  sendWelcomeEmail(newUser, sponsorId);
+
+  return newUser;
+};
+
   

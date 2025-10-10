@@ -35,27 +35,23 @@ export const getReferralTree = async (req: Request, res: Response) => {
     try {
         const { userId } = req.params;
         
-        // 1. Build the user's downline tree
-        const tree = await buildReferralTree(userId);
-        if (!tree) {
+        // 1. Find the user to get their parent info
+        const user = await User.findOne({ userId }).lean();
+        if (!user) {
             return res.status(404).json({ message: `User with ID '${userId}' not found.` });
         }
 
-        // 2. Find the user's parent
-        const user = await User.findOne({ userId }).lean();
-        let parent = null;
-        if (user && user.parentId) {
-            if (user.parentId === companyConfig.sponsorId) {
-                parent = {
-                    userId: companyConfig.sponsorId,
-                    fullName: 'SAGENEX',
-                };
-            } else {
-                parent = await User.findOne({ userId: user.parentId }).select('userId fullName').lean();
-            }
+        // 2. Build the user's downline tree
+        const tree = await buildReferralTree(userId);
+        if (!tree) {
+            // This case is redundant due to the check above, but good for safety
+            return res.status(404).json({ message: `User with ID '${userId}' not found.` });
         }
 
-        // 3. Send the combined response
+        // 3. Get parent info using the reusable service
+        const parent = await userService.getParentInfo(user);
+
+        // 4. Send the combined response
         res.status(200).json({ tree, parent });
 
     } catch (error) {
