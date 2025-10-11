@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import * as userController from './user.controller';
 import * as payoutsController from './payouts.controller';
+import * as placementController from './placement.controller';
 import { protectUser } from '../auth/auth.middleware';
 
 const router = Router();
@@ -34,5 +35,9 @@ router.get('/leaderboard', userController.getLeaderboard);
 
 // Route to get the user's monthly payout history
 router.get('/payouts', payoutsController.getMonthlyPayouts);
+
+// Routes for placement queue
+router.get('/team/placement-queue', placementController.getPlacementQueue);
+router.post('/team/place-user', placementController.placeUser);
 
 export default router;

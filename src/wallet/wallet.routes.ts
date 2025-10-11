@@ -1,11 +1,16 @@
 import { Router } from 'express';
 import * as walletController from './wallet.controller';
+import { protectUser } from '../auth/auth.middleware';
 
 const router = Router();
 
-// TODO: Add authorization middleware to ensure only the user or an admin can access this route.
+// All wallet routes are protected and require a logged-in user
+router.use(protectUser);
 
-// Route to get a user's wallet summary and ledger
-router.get('/:userId', walletController.getWallet);
+// Route to get the logged-in user's wallet summary and ledger
+router.get('/', walletController.getWallet);
+
+// Route to create a new withdrawal request
+router.post('/request-withdrawal', walletController.requestWithdrawal);
 
 export default router;

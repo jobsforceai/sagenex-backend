@@ -5,8 +5,8 @@
   "main": "dist/server.js",
   "scripts": {
     "start": "node dist/server.js",
-    "dev": "nodemon --watch 'src/**/*.ts' --exec 'ts-node' src/server.ts",
-    "build": "tsc",
+    "dev": "NODE_OPTIONS=--max-old-space-size=4096 nodemon --watch 'src/**/*.ts' --exec 'ts-node' src/server.ts",
+    "build": "node --max-old-space-size=4096 ./node_modules/.bin/tsc",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -14,8 +14,10 @@
   "license": "ISC",
   "dependencies": {
     "@types/express-session": "^1.18.2",
+    "@types/multer": "^2.0.0",
     "@types/passport": "^1.0.17",
     "@types/passport-google-oauth20": "^2.0.16",
+    "aws-sdk": "^2.1692.0",
     "axios": "^1.12.2",
     "bcryptjs": "^3.0.2",
     "bullmq": "^5.60.0",
@@ -28,6 +30,7 @@
     "googleapis": "^161.0.0",
     "jsonwebtoken": "^8.5.1",
     "mongoose": "^8.19.0",
+    "multer": "^2.0.2",
     "nanoid": "^3.3.11",
     "passport": "^0.7.0",
     "passport-google-oauth20": "^2.0.0",

@@ -1,22 +1,22 @@
 import { Schema, model, Document } from 'mongoose';
 
-export type LedgerEntryType = 
-  | 'OFFLINE_DEPOSIT' 
-  | 'PACKAGE_ACTIVATION' 
-  | 'ROI' 
-  | 'DIRECT' 
-  | 'UNILEVEL' 
-  | 'SALARY' 
-  | 'WITHDRAWAL_REQUEST' 
-  | 'WITHDRAWAL_PAID' 
+export type LedgerEntryType =
+  | 'OFFLINE_DEPOSIT'
+  | 'PACKAGE_ACTIVATION'
+  | 'ROI'
+  | 'DIRECT'
+  | 'UNILEVEL'
+  | 'SALARY'
+  | 'WITHDRAWAL_REQUEST'
   | 'ADJUSTMENT';
 
-export type LedgerEntryStatus = 
-  | 'PENDING' 
-  | 'VERIFIED' 
-  | 'POSTED' 
-  | 'REJECTED' 
-  | 'CANCELLED';
+export type LedgerEntryStatus =
+  | 'PENDING'
+  | 'VERIFIED'
+  | 'POSTED'
+  | 'REJECTED'
+  | 'CANCELLED'
+  | 'PAID';
 
 export interface IWalletLedger extends Document {
   userId: string;
@@ -30,26 +30,25 @@ export interface IWalletLedger extends Document {
 
 const walletLedgerSchema = new Schema<IWalletLedger>({
   userId: { type: String, required: true, ref: 'User', index: true },
-  type: { 
-    type: String, 
-    required: true, 
+  type: {
+    type: String,
+    required: true,
     enum: [
-      'OFFLINE_DEPOSIT', 
-      'PACKAGE_ACTIVATION', 
-      'ROI', 
-      'DIRECT', 
-      'UNILEVEL', 
-      'SALARY', 
-      'WITHDRAWAL_REQUEST', 
-      'WITHDRAWAL_PAID', 
+      'OFFLINE_DEPOSIT',
+      'PACKAGE_ACTIVATION',
+      'ROI',
+      'DIRECT',
+      'UNILEVEL',
+      'SALARY',
+      'WITHDRAWAL_REQUEST',
       'ADJUSTMENT'
-    ] 
+    ]
   },
   amount: { type: Number, required: true },
-  status: { 
-    type: String, 
-    required: true, 
-    enum: ['PENDING', 'VERIFIED', 'POSTED', 'REJECTED', 'CANCELLED'],
+  status: {
+    type: String,
+    required: true,
+    enum: ['PENDING', 'VERIFIED', 'POSTED', 'REJECTED', 'CANCELLED', 'PAID'],
     default: 'PENDING'
   },
   createdBy: { type: String, required: true, ref: 'User' },

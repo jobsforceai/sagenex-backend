@@ -11,6 +11,19 @@ import CurrencyRate from '../rates/currency.model';
 import { companyConfig } from '../config/company';
 
 /**
+ * Manually triggers the auto-placement job for users whose deadline has passed.
+ */
+export const runAutoPlacement = async (req: Request, res: Response) => {
+    try {
+        const result = await adminService.autoPlacePendingUsers();
+        res.status(200).json({ message: 'Auto-placement job completed.', result });
+    } catch (error: any) {
+        console.error('Error running auto-placement job:', error);
+        res.status(500).json({ message: 'Error running auto-placement job.', error: error.message });
+    }
+};
+
+/**
  * Onboards a new user. This is an admin-only action.
  */
 export const onboardUser = async (req: Request, res: Response) => {
@@ -305,5 +318,117 @@ export const setFixedRate = async (req: Request, res: Response) => {
         res.status(200).json({ message: 'Fixed rate set successfully.', rate });
     } catch (error: any) {
         res.status(500).json({ message: 'Error setting fixed rate.', error });
+    }
+};
+
+// --- KYC Management ---
+
+/**
+ * Gets a list of KYC submissions, filterable by status.
+ */
+export const getKycSubmissions = async (req: Request, res: Response) => {
+    try {
+        const status = (req.query.status as string)?.toUpperCase() || 'PENDING';
+        if (!['PENDING', 'VERIFIED', 'REJECTED', 'NOT_SUBMITTED'].includes(status)) {
+            return res.status(400).json({ message: 'Invalid status query parameter.' });
+        }
+        const submissions = await adminService.getKycSubmissions(status as any);
+        res.status(200).json(submissions);
+    } catch (error) {
+        res.status(500).json({ message: 'Error fetching KYC submissions.', error });
+    }
+};
+
+/**
+ * Verifies a KYC submission.
+ */
+export const verifyKyc = async (req: Request, res: Response) => {
+    const admin = (req as any).user;
+    try {
+        const kyc = await adminService.verifyKyc(req.params.kycId, admin.adminId);
+        res.status(200).json({ message: 'KYC verified successfully.', kyc });
+    } catch (error: any) {
+        if (error.name === 'NotFoundError' || error.name === 'ConflictError') {
+            return res.status(400).json({ message: error.message });
+        }
+        res.status(500).json({ message: 'Error verifying KYC.', error });
+    }
+};
+
+/**
+ * Rejects a KYC submission.
+ */
+export const rejectKyc = async (req: Request, res: Response) => {
+    const admin = (req as any).user;
+    const { reason } = req.body;
+
+    if (!reason) {
+        return res.status(400).json({ message: 'Rejection reason is required.' });
+    }
+
+    try {
+        const kyc = await adminService.rejectKyc(req.params.kycId, admin.adminId, reason);
+        res.status(200).json({ message: 'KYC rejected successfully.', kyc });
+    } catch (error: any) {
+        if (error.name === 'NotFoundError' || error.name === 'ConflictError' || error.name === 'ValidationError') {
+            return res.status(400).json({ message: error.message });
+        }
+        res.status(500).json({ message: 'Error rejecting KYC.', error });
+    }
+};
+
+// --- Withdrawal Management ---
+
+/**
+ * Gets a list of withdrawal requests, filterable by status.
+ */
+export const getWithdrawalRequests = async (req: Request, res: Response) => {
+    try {
+        const status = (req.query.status as string)?.toUpperCase() || 'PENDING';
+        if (!['PENDING', 'PAID', 'REJECTED'].includes(status)) {
+            return res.status(400).json({ message: 'Invalid status query parameter.' });
+        }
+        const requests = await adminService.getWithdrawalRequests(status as any);
+        res.status(200).json(requests);
+    } catch (error) {
+        res.status(500).json({ message: 'Error fetching withdrawal requests.', error });
+    }
+};
+
+/**
+ * Approves a withdrawal request.
+ */
+export const approveWithdrawal = async (req: Request, res: Response) => {
+    const admin = (req as any).user;
+    try {
+        const withdrawal = await adminService.approveWithdrawal(req.params.withdrawalId, admin.adminId);
+        res.status(200).json({ message: 'Withdrawal approved successfully.', withdrawal });
+    } catch (error: any) {
+        if (error.name === 'NotFoundError' || error.name === 'ConflictError') {
+            return res.status(400).json({ message: error.message });
+        }
+        res.status(500).json({ message: 'Error approving withdrawal.', error });
+    }
+};
+
+/**
+ * Rejects a withdrawal request.
+ */
+export const rejectWithdrawal = async (req: Request, res: Response) => {
+    const admin = (req as any).user;
+    const { reason } = req.body;
+
+    if (!reason) {
+        return res.status(400).json({ message: 'Rejection reason is required.' });
+    }
+
+    try {
+        const withdrawal = await adminService.rejectWithdrawal(req.params.withdrawalId, admin.adminId, reason);
+        res.status(200).json({ message: 'Withdrawal rejected successfully.', withdrawal });
+    } catch (error: any) {
+        if (error.name === 'NotFoundError' || error.name === 'ConflictError' || error.name === 'ValidationError') {
+            return res.status(400).json({ message: error.message });
+        }
+        res.status(500).json({ message: 'Error rejecting withdrawal.', error });
     }
 };

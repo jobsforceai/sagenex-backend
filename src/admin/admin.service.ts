@@ -252,6 +252,7 @@ export const getUserById = async (userId: string): Promise<IUser> => {
 };
 
 import DeletedUser from './deleted.user.model';
+import Kyc, { KycStatus } from '../kyc/kyc.model';
 
 /**
  * Deletes a single user by their user ID.
@@ -276,4 +277,227 @@ export const deleteUser = async (userId: string, adminId: string): Promise<void>
 
     // 3. Delete the original user
     await user.deleteOne();
+};
+
+// --- KYC Management ---
+
+/**
+ * Gets a list of KYC submissions, filterable by status.
+ * @param status The status to filter KYC submissions by.
+ * @returns A list of KYC documents.
+ */
+export const getKycSubmissions = async (status: KycStatus) => {
+  const submissions = await Kyc.find({ status }).sort({ submittedAt: 1 });
+  return submissions;
+};
+
+/**
+ * Verifies a user's KYC submission.
+ * @param kycId The ID of the KYC submission to verify.
+ * @param adminId The ID of the admin performing the action.
+ * @returns The updated KYC document.
+ */
+export const verifyKyc = async (kycId: string, adminId: string) => {
+  const kyc = await Kyc.findById(kycId);
+  if (!kyc) {
+    throw new CustomError('NotFoundError', `KYC submission with ID '${kycId}' not found.`);
+  }
+  if (kyc.status !== 'PENDING') {
+    throw new CustomError('ConflictError', `Cannot verify KYC. Status is '${kyc.status}'.`);
+  }
+
+  const user = await User.findOne({ userId: kyc.userId });
+  if (!user) {
+    throw new CustomError('NotFoundError', `User with ID '${kyc.userId}' associated with this KYC not found.`);
+  }
+
+  // Update KYC record
+  kyc.status = 'VERIFIED';
+  kyc.verifiedAt = new Date();
+  kyc.verifiedBy = adminId;
+  await kyc.save();
+
+  // Sync status with user record
+  user.kycStatus = 'VERIFIED';
+  await user.save();
+
+  return kyc;
+};
+
+/**
+ * Rejects a user's KYC submission.
+ * @param kycId The ID of the KYC submission to reject.
+ * @param adminId The ID of the admin performing the action.
+ * @param reason The reason for rejection.
+ * @returns The updated KYC document.
+ */
+export const rejectKyc = async (kycId: string, adminId: string, reason: string) => {
+  if (!reason) {
+    throw new CustomError('ValidationError', 'A reason is required to reject KYC.');
+  }
+
+  const kyc = await Kyc.findById(kycId);
+  if (!kyc) {
+    throw new CustomError('NotFoundError', `KYC submission with ID '${kycId}' not found.`);
+  }
+  if (kyc.status !== 'PENDING') {
+    throw new CustomError('ConflictError', `Cannot reject KYC. Status is '${kyc.status}'.`);
+  }
+
+  const user = await User.findOne({ userId: kyc.userId });
+  if (!user) {
+    throw new CustomError('NotFoundError', `User with ID '${kyc.userId}' associated with this KYC not found.`);
+  }
+
+  // Update KYC record
+  kyc.status = 'REJECTED';
+  kyc.rejectionReason = reason;
+  kyc.verifiedAt = new Date(); // 'verifiedAt' here means 'processedAt'
+  kyc.verifiedBy = adminId;
+  await kyc.save();
+
+  // Sync status with user record
+  user.kycStatus = 'REJECTED';
+  await user.save();
+
+  return kyc;
+};
+
+// --- Withdrawal Management ---
+
+/**
+ * Gets a list of withdrawal requests, filterable by status.
+ * @param status The status to filter requests by.
+ * @returns A list of withdrawal request ledger entries.
+ */
+export const getWithdrawalRequests = async (status: 'PENDING' | 'PAID' | 'REJECTED') => {
+  const requests = await WalletLedger.find({
+    type: 'WITHDRAWAL_REQUEST',
+    status,
+  }).sort({ createdAt: 1 });
+  return requests;
+};
+
+/**
+ * Approves a withdrawal request.
+ * @param withdrawalId The ID of the withdrawal ledger entry.
+ * @param adminId The ID of the admin approving the request.
+ * @returns The updated ledger entry.
+ */
+export const approveWithdrawal = async (withdrawalId: string, adminId: string) => {
+  const withdrawal = await WalletLedger.findById(withdrawalId);
+  if (!withdrawal || withdrawal.type !== 'WITHDRAWAL_REQUEST') {
+    throw new CustomError('NotFoundError', `Withdrawal request with ID '${withdrawalId}' not found.`);
+  }
+  if (withdrawal.status !== 'PENDING') {
+    throw new CustomError('ConflictError', `Cannot approve request. Status is '${withdrawal.status}'.`);
+  }
+
+  withdrawal.status = 'PAID';
+  withdrawal.meta = { ...withdrawal.meta, processedBy: adminId, processedAt: new Date() };
+  await withdrawal.save();
+
+  return withdrawal;
+};
+
+/**
+ * Rejects a withdrawal request and refunds the user.
+ * @param withdrawalId The ID of the withdrawal ledger entry.
+ * @param adminId The ID of the admin rejecting the request.
+ * @param reason The reason for rejection.
+ * @returns The updated ledger entry.
+ */
+export const rejectWithdrawal = async (withdrawalId: string, adminId: string, reason: string) => {
+  if (!reason) {
+    throw new CustomError('ValidationError', 'A reason is required to reject a withdrawal.');
+  }
+
+  const withdrawal = await WalletLedger.findById(withdrawalId);
+  if (!withdrawal || withdrawal.type !== 'WITHDRAWAL_REQUEST') {
+    throw new CustomError('NotFoundError', `Withdrawal request with ID '${withdrawalId}' not found.`);
+  }
+  if (withdrawal.status !== 'PENDING') {
+    throw new CustomError('ConflictError', `Cannot reject request. Status is '${withdrawal.status}'.`);
+  }
+
+  // Refund the user by adding the amount back to their available balance
+  // The ledger amount is negative, so we subtract it (e.g., balance - (-100) = balance + 100)
+  await WalletSummary.updateOne(
+    { userId: withdrawal.userId },
+    { $inc: { availableToWithdraw: -withdrawal.amount } }
+  );
+
+  // Update the withdrawal record
+  withdrawal.status = 'REJECTED';
+  withdrawal.meta = { ...withdrawal.meta, processedBy: adminId, processedAt: new Date(), rejectionReason: reason };
+  await withdrawal.save();
+
+  return withdrawal;
+};
+
+// --- Auto Placement Cron Job ---
+
+/**
+ * Finds and places users whose 48-hour placement deadline has passed.
+ * This function is intended to be run by a scheduled job.
+ * @returns A summary of the placement results.
+ */
+export const autoPlacePendingUsers = async () => {
+  const now = new Date();
+  const usersToPlace = await User.find({
+    parentId: null,
+    placementDeadline: { $ne: null, $lte: now },
+  });
+
+  let successfulPlacements = 0;
+  let failedPlacements = 0;
+  const logs: string[] = [];
+
+  for (const user of usersToPlace) {
+    try {
+      const sponsor = await User.findOne({ userId: user.originalSponsorId });
+      if (!sponsor) {
+        throw new Error(`Sponsor ${user.originalSponsorId} not found.`);
+      }
+
+      // Try to place under the sponsor first
+      const sponsorDirects = await User.countDocuments({ parentId: sponsor.userId });
+      if (sponsorDirects < 6) {
+        user.parentId = sponsor.userId;
+        user.isSplitSponsor = false;
+        logs.push(`Placed ${user.userId} directly under sponsor ${sponsor.userId}.`);
+      } else {
+        // If sponsor is full, find an open spot in their downline
+        const sponsorChildren = await User.find({ parentId: sponsor.userId }).select('userId');
+        let placed = false;
+        for (const child of sponsorChildren) {
+          const childDirects = await User.countDocuments({ parentId: child.userId });
+          if (childDirects < 6) {
+            user.parentId = child.userId;
+            user.isSplitSponsor = true;
+            placed = true;
+            logs.push(`Sponsor full. Placed ${user.userId} under designee ${child.userId}.`);
+            break;
+          }
+        }
+        if (!placed) {
+          throw new Error(`Sponsor ${sponsor.userId} and all direct children are full.`);
+        }
+      }
+      
+      user.placementDeadline = undefined;
+      await user.save();
+      successfulPlacements++;
+    } catch (error: any) {
+      failedPlacements++;
+      logs.push(`Failed to place ${user.userId}: ${error.message}`);
+    }
+  }
+
+  return {
+    processed: usersToPlace.length,
+    successfulPlacements,
+    failedPlacements,
+    logs,
+  };
 };

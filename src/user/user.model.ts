@@ -1,5 +1,6 @@
 import { Schema, model, Document } from 'mongoose';
 import Counter from '../helpers/counter.model';
+import { KycStatus } from '../kyc/kyc.model';
 
 export interface IUser extends Document {
   userId: string;
@@ -18,6 +19,8 @@ export interface IUser extends Document {
   status: 'active' | 'inactive';
   salary: number;
   isPackageActive: boolean;
+  kycStatus: KycStatus;
+  placementDeadline?: Date;
 }
 
 const userSchema = new Schema<IUser>({
@@ -37,6 +40,8 @@ const userSchema = new Schema<IUser>({
   status: { type: String, enum: ['active', 'inactive'], default: 'active' },
   salary: { type: Number, default: 0 },
   isPackageActive: { type: Boolean, default: false },
+  kycStatus: { type: String, enum: ['NOT_SUBMITTED', 'PENDING', 'VERIFIED', 'REJECTED'], default: 'NOT_SUBMITTED' },
+  placementDeadline: { type: Date },
 }, { timestamps: true });
 
 // Auto-increment userId before saving a new user

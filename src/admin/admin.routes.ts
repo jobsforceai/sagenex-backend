@@ -50,4 +50,17 @@ router.post('/rates', adminController.setFixedRate);
 router.get('/deposits', adminController.getDeposits);
 router.post('/deposits/:depositId/verify', adminController.verifyDeposit);
 
+// Routes for managing KYC
+router.get('/kyc', adminController.getKycSubmissions);
+router.post('/kyc/:kycId/verify', adminController.verifyKyc);
+router.post('/kyc/:kycId/reject', adminController.rejectKyc);
+
+// Routes for managing withdrawals
+router.get('/withdrawals', adminController.getWithdrawalRequests);
+router.post('/withdrawals/:withdrawalId/approve', adminController.approveWithdrawal);
+router.post('/withdrawals/:withdrawalId/reject', adminController.rejectWithdrawal);
+
+// Route to manually trigger the auto-placement job
+router.post('/users/run-auto-placement', adminController.runAutoPlacement);
+
 export default router;

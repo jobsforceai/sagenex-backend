@@ -553,8 +553,8 @@ export const getUserProfile = async (userId: string) => {
  * @param userData The data for the new user.
  * @returns The newly created user document.
  */
-export const createNewUser = async (userData: Partial<IUser> & { sponsorId?: string, placementDesigneeId?: string }) => {
-  const { fullName, email, phone, sponsorId, placementDesigneeId, dateJoined, googleId, profilePicture } = userData;
+export const createNewUser = async (userData: Partial<IUser> & { sponsorId?: string }) => {
+  const { fullName, email, phone, sponsorId, dateJoined, googleId, profilePicture } = userData;
 
   // 1. Basic Validation
   if (!fullName || !email) {
@@ -567,50 +567,24 @@ export const createNewUser = async (userData: Partial<IUser> & { sponsorId?: str
 
   let originalSponsorId: string | null = null;
   let parentId: string | null = null;
-  let isSplitSponsor = false;
+  let placementDeadline: Date | undefined = undefined;
 
   // 2. Resolve Sponsor and Determine Placement
   const effectiveSponsorId = sponsorId || companyConfig.sponsorId;
 
   if (effectiveSponsorId === companyConfig.sponsorId) {
-    // Case A: User is sponsored by the company
+    // Case A: User is sponsored by the company, place immediately
     originalSponsorId = companyConfig.sponsorId;
     parentId = companyConfig.sponsorId;
   } else {
-    // Case B: User has a real sponsor
+    // Case B: User has a real sponsor, place them in the queue
     const originalSponsor = await User.findOne({ $or: [{ userId: effectiveSponsorId }, { referralCode: effectiveSponsorId }] });
     if (!originalSponsor) {
       throw new CustomError('NotFoundError', `Sponsor with ID or Referral Code '${effectiveSponsorId}' not found.`);
     }
     originalSponsorId = originalSponsor.userId;
-
-    const sponsorDirectCount = await User.countDocuments({ parentId: originalSponsor.userId });
-
-    if (sponsorDirectCount < featureFlags.directWidthCap) {
-      // Sponsor has capacity
-      if (placementDesigneeId) {
-        throw new CustomError('ValidationError', 'Designee not allowed; sponsor has capacity.');
-      }
-      parentId = originalSponsor.userId;
-    } else {
-      // Sponsor is full, designee is required
-      if (!placementDesigneeId) {
-        throw new CustomError('ValidationError', 'Sponsor is full; a placement designee is required.');
-      }
-
-      const designee = await User.findOne({ userId: placementDesigneeId });
-      if (!designee || designee.parentId !== originalSponsor.userId) {
-        throw new CustomError('ValidationError', 'Designee must be one of the sponsor’s direct children.');
-      }
-
-      const designeeDirectCount = await User.countDocuments({ parentId: designee.userId });
-      if (designeeDirectCount >= featureFlags.directWidthCap) {
-        throw new CustomError('ConflictError', 'Selected designee already has 6 directs. Pick a different designee.');
-      }
-      
-      parentId = designee.userId;
-      isSplitSponsor = true;
-    }
+    parentId = null; // Set parent to null to indicate they are in the queue
+    placementDeadline = new Date(Date.now() + 48 * 60 * 60 * 1000); // 48 hours from now
   }
 
   // 3. Create User
@@ -624,16 +598,86 @@ export const createNewUser = async (userData: Partial<IUser> & { sponsorId?: str
     packageUSD: 0,
     originalSponsorId,
     parentId,
-    isSplitSponsor,
+    isSplitSponsor: false, // This will be determined upon placement
     dateJoined: dateJoined ? new Date(dateJoined) : new Date(),
     pvPoints: 0,
     referralCode: nanoid(),
+    placementDeadline,
   });
 
   await newUser.save();
 
   // 4. Send welcome email (fire and forget)
   sendWelcomeEmail(newUser, sponsorId);
+
+  return newUser;
+};
+
+// --- Placement Queue Functions ---
+
+/**
+ * Gets the list of unplaced users for a specific sponsor.
+ * @param sponsorId The ID of the sponsor.
+ * @returns A list of user documents awaiting placement.
+ */
+export const getPlacementQueue = async (sponsorId: string) => {
+  const queue = await User.find({
+    originalSponsorId: sponsorId,
+    parentId: null,
+  }).sort({ dateJoined: 1 });
+  return queue;
+};
+
+/**
+ * Manually places a new user from the sponsor's queue into the tree.
+ * @param sponsorId The ID of the sponsor performing the action.
+ * @param newUserId The ID of the user being placed.
+ * @param placementParentId The ID of the user who will become the new user's parent.
+ * @returns The updated user document of the placed user.
+ */
+export const placeUser = async (sponsorId: string, newUserId: string, placementParentId: string) => {
+  // 1. Fetch all necessary documents in parallel
+  const newUserPromise = User.findOne({ userId: newUserId });
+  const sponsorPromise = User.findOne({ userId: sponsorId });
+  const placementParentPromise = User.findOne({ userId: placementParentId });
+
+  const [newUser, sponsor, placementParent] = await Promise.all([
+    newUserPromise,
+    sponsorPromise,
+    placementParentPromise,
+  ]);
+
+  // 2. Validate all entities
+  if (!newUser) throw new CustomError('NotFoundError', `User to be placed with ID '${newUserId}' not found.`);
+  if (!sponsor) throw new CustomError('NotFoundError', `Sponsor with ID '${sponsorId}' not found.`);
+  if (!placementParent) throw new CustomError('NotFoundError', `Placement parent with ID '${placementParentId}' not found.`);
+
+  // 3. Perform authorization and business logic checks
+  if (newUser.parentId !== null) {
+    throw new CustomError('ConflictError', 'This user has already been placed.');
+  }
+  if (newUser.originalSponsorId !== sponsorId) {
+    throw new CustomError('AuthorizationError', 'You are not the original sponsor for this user.');
+  }
+  if (newUser.placementDeadline && new Date() > newUser.placementDeadline) {
+    throw new CustomError('ConflictError', 'The 48-hour manual placement window has expired.');
+  }
+  if (placementParentId !== sponsorId && placementParent.parentId !== sponsorId) {
+    throw new CustomError('ValidationError', 'Invalid placement. Designee must be a direct child of the sponsor.');
+  }
+
+  // 4. Check capacity of the placement parent
+  const childCount = await User.countDocuments({ parentId: placementParentId });
+  if (childCount >= featureFlags.directWidthCap) {
+    throw new CustomError('ConflictError', `'${placementParent.fullName}' already has 6 direct members.`);
+  }
+
+  // 5. Update the new user's placement details
+  newUser.parentId = placementParentId;
+  newUser.isSplitSponsor = placementParentId !== sponsorId;
+  newUser.placementDeadline = undefined; // Remove deadline as they are now placed
+  
+  await newUser.save();
 
   return newUser;
 };
