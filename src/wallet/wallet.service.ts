@@ -81,12 +81,27 @@ export const generateAndSendTransferOtp = async (userId: string) => {
     throw new CustomError('NotFoundError', `User with ID '${userId}' not found.`);
   }
 
+  const now = new Date();
+  const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+
+  // Reset count if the last request was more than an hour ago
+  if (user.otpRequestTimestamp && user.otpRequestTimestamp < oneHourAgo) {
+    user.otpRequestCount = 0;
+  }
+
+  // Check request limit
+  if (user.otpRequestCount && user.otpRequestCount >= 5) {
+    throw new CustomError('ValidationError', 'You have exceeded the OTP request limit. Please try after 1 hour.');
+  }
+
   const nanoid = customAlphabet('1234567890', 6);
   const otp = nanoid();
   
   const salt = await bcrypt.genSalt(10);
   user.otp = await bcrypt.hash(otp, salt);
   user.otpExpires = new Date(Date.now() + 10 * 60 * 1000); // Expires in 10 minutes
+  user.otpRequestCount = (user.otpRequestCount || 0) + 1;
+  user.otpRequestTimestamp = now;
   await user.save();
 
   await sendTransferOtpEmail(user, otp);
@@ -115,11 +130,25 @@ export const executeTransfer = async (senderId: string, recipientId: string, amo
     if (!sender) throw new CustomError('NotFoundError', 'Sender not found.');
     if (!recipient) throw new CustomError('NotFoundError', 'Recipient not found.');
     if (!senderWallet) throw new CustomError('NotFoundError', 'Sender wallet not found.');
+
+    // Check for account lockout
+    if (sender.otpLockoutExpires && new Date() < sender.otpLockoutExpires) {
+      throw new CustomError('AuthorizationError', 'Account is locked due to too many failed OTP attempts. Please try again later.');
+    }
+
     if (!sender.otp || !sender.otpExpires) throw new CustomError('AuthorizationError', 'No OTP has been generated.');
     if (new Date() > sender.otpExpires) throw new CustomError('AuthorizationError', 'OTP has expired.');
 
     const isOtpValid = await bcrypt.compare(otp, sender.otp);
-    if (!isOtpValid) throw new CustomError('AuthorizationError', 'Invalid OTP.');
+    if (!isOtpValid) {
+      sender.failedOtpAttempts = (sender.failedOtpAttempts || 0) + 1;
+      if (sender.failedOtpAttempts >= 5) {
+        sender.otpLockoutExpires = new Date(Date.now() + 60 * 60 * 1000); // Lock for 1 hour
+      }
+      await sender.save({ session });
+      throw new CustomError('AuthorizationError', 'Invalid OTP.');
+    }
+
     if (senderWallet.availableToWithdraw < amount) throw new CustomError('ValidationError', 'Insufficient funds.');
 
     const transactionId = `T-${customAlphabet('1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ', 12)()}`;
@@ -155,6 +184,8 @@ export const executeTransfer = async (senderId: string, recipientId: string, amo
 
     sender.otp = undefined;
     sender.otpExpires = undefined;
+    sender.failedOtpAttempts = 0; // Reset on successful transfer
+    sender.otpLockoutExpires = undefined;
     await sender.save({ session });
 
     await session.commitTransaction();

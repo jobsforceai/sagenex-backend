@@ -23,6 +23,10 @@ export interface IUser extends Document {
   placementDeadline?: Date;
   otp?: string;
   otpExpires?: Date;
+  otpRequestCount?: number;
+  otpRequestTimestamp?: Date;
+  failedOtpAttempts?: number;
+  otpLockoutExpires?: Date;
 }
 
 const userSchema = new Schema<IUser>({
@@ -46,6 +50,10 @@ const userSchema = new Schema<IUser>({
   placementDeadline: { type: Date },
   otp: { type: String },
   otpExpires: { type: Date },
+  otpRequestCount: { type: Number, default: 0 },
+  otpRequestTimestamp: { type: Date },
+  failedOtpAttempts: { type: Number, default: 0 },
+  otpLockoutExpires: { type: Date },
 }, { timestamps: true });
 
 // Auto-increment userId before saving a new user
