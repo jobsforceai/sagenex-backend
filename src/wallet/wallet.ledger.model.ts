@@ -8,7 +8,9 @@ export type LedgerEntryType =
   | 'UNILEVEL'
   | 'SALARY'
   | 'WITHDRAWAL_REQUEST'
-  | 'ADJUSTMENT';
+  | 'ADJUSTMENT'
+  | 'TRANSFER_IN'
+  | 'TRANSFER_OUT';
 
 export type LedgerEntryStatus =
   | 'PENDING'
@@ -41,7 +43,9 @@ const walletLedgerSchema = new Schema<IWalletLedger>({
       'UNILEVEL',
       'SALARY',
       'WITHDRAWAL_REQUEST',
-      'ADJUSTMENT'
+      'ADJUSTMENT',
+      'TRANSFER_IN',
+      'TRANSFER_OUT'
     ]
   },
   amount: { type: Number, required: true },

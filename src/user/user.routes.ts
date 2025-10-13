@@ -40,4 +40,7 @@ router.get('/payouts', payoutsController.getMonthlyPayouts);
 router.get('/team/placement-queue', placementController.getPlacementQueue);
 router.post('/team/place-user', placementController.placeUser);
 
+// Route to get the list of users for fund transfers
+router.get('/transfer-recipients', userController.getTransferRecipients);
+
 export default router;

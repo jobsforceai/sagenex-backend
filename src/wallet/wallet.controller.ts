@@ -46,3 +46,48 @@ export const requestWithdrawal = async (req: Request, res: Response) => {
     res.status(500).json({ message: 'Error creating withdrawal request.', error: error.message });
   }
 };
+
+/**
+ * Generates and sends an OTP to the user's email for transfer verification.
+ */
+export const sendTransferOtp = async (req: Request, res: Response) => {
+  const user = (req as any).user;
+  try {
+    await walletService.generateAndSendTransferOtp(user.userId);
+    res.status(200).json({ message: 'An OTP has been sent to your registered email.' });
+  } catch (error: any) {
+    console.error(`Error sending OTP for user ${user.userId}:`, error);
+    res.status(500).json({ message: 'Error sending OTP.', error: error.message });
+  }
+};
+
+/**
+ * Executes a user-to-user fund transfer.
+ */
+export const executeTransfer = async (req: Request, res: Response) => {
+  const user = (req as any).user;
+  const { recipientId, amount, otp } = req.body;
+
+  if (!recipientId || !amount || !otp) {
+    return res.status(400).json({ message: 'recipientId, amount, and otp are required.' });
+  }
+
+  const parsedAmount = parseFloat(amount);
+  if (isNaN(parsedAmount)) {
+    return res.status(400).json({ message: 'Invalid amount format.' });
+  }
+
+  try {
+    const result = await walletService.executeTransfer(user.userId, recipientId, parsedAmount, otp);
+    res.status(200).json({ message: 'Transfer successful.', ...result });
+  } catch (error: any) {
+    if (error.name === 'ValidationError' || error.name === 'NotFoundError') {
+      return res.status(400).json({ message: error.message });
+    }
+    if (error.name === 'AuthorizationError') {
+      return res.status(403).json({ message: error.message });
+    }
+    console.error(`Error executing transfer for user ${user.userId}:`, error);
+    res.status(500).json({ message: 'Error executing transfer.', error: error.message });
+  }
+};

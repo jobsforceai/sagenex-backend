@@ -136,4 +136,18 @@ export const getLeaderboard = async (req: Request, res: Response) => {
         res.status(500).json({ message: 'Error fetching profile data.', error: error.message });
       }
     };
+
+/**
+ * Gets a list of users eligible to receive a fund transfer.
+ */
+export const getTransferRecipients = async (req: Request, res: Response) => {
+  const user = (req as any).user;
+  try {
+    const recipients = await userService.getTransferRecipients(user.userId);
+    res.status(200).json(recipients);
+  } catch (error: any) {
+    console.error(`Error fetching transfer recipients for user ${user.userId}:`, error);
+    res.status(500).json({ message: 'Error fetching transfer recipients.', error: error.message });
+  }
+};
     

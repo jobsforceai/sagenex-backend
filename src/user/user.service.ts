@@ -677,9 +677,22 @@ export const placeUser = async (sponsorId: string, newUserId: string, placementP
   newUser.isSplitSponsor = placementParentId !== sponsorId;
   newUser.placementDeadline = undefined; // Remove deadline as they are now placed
   
-  await newUser.save();
-
   return newUser;
 };
+
+/**
+ * Gets a list of all users eligible to receive a transfer.
+ * @param currentUserId The ID of the user who is sending the funds, to exclude them from the list.
+ * @returns A list of users with only their userId and fullName.
+ */
+export const getTransferRecipients = async (currentUserId: string) => {
+  const users = await User.find({ userId: { $ne: currentUserId } })
+    .select('userId fullName')
+    .sort({ fullName: 1 })
+    .lean();
+  return users;
+};
+
+
 
   

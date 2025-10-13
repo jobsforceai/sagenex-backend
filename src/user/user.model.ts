@@ -21,6 +21,8 @@ export interface IUser extends Document {
   isPackageActive: boolean;
   kycStatus: KycStatus;
   placementDeadline?: Date;
+  otp?: string;
+  otpExpires?: Date;
 }
 
 const userSchema = new Schema<IUser>({
@@ -42,6 +44,8 @@ const userSchema = new Schema<IUser>({
   isPackageActive: { type: Boolean, default: false },
   kycStatus: { type: String, enum: ['NOT_SUBMITTED', 'PENDING', 'VERIFIED', 'REJECTED'], default: 'NOT_SUBMITTED' },
   placementDeadline: { type: Date },
+  otp: { type: String },
+  otpExpires: { type: Date },
 }, { timestamps: true });
 
 // Auto-increment userId before saving a new user

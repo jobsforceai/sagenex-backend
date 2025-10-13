@@ -77,6 +77,34 @@ export const sendWelcomeEmail = async (user: IUser, originalSponsorId?: string):
     } else {
         console.error(error);
     }
-    console.error('----------------------------------------------------');
-  }
-};
+        console.error('----------------------------------------------------');
+      }
+    };
+    
+    import { getTransferOtpEmailHTML } from './templates/transfer-otp.template';
+    
+    /**
+     * Sends a one-time password (OTP) to a user for fund transfer verification.
+     * @param user The user object.
+     * @param otp The plain text OTP to send.
+     */
+    export const sendTransferOtpEmail = async (user: IUser, otp: string): Promise<void> => {
+      try {
+        console.log(`Attempting to send transfer OTP to ${user.email}...`);
+        const messageId = await sendViaGmailAPI(
+          user.email,
+          'Your Sagenex Transfer Verification Code',
+          getTransferOtpEmailHTML(user, otp)
+        );
+        console.log('OTP Email sent successfully! Message ID: %s', messageId);
+      } catch (error: any) {
+        console.error('--- DETAILED ERROR SENDING OTP EMAIL VIA GMAIL API ---');
+        if (error.response && error.response.data) {
+            console.error(error.response.data);
+        } else {
+            console.error(error);
+        }
+        console.error('----------------------------------------------------');
+      }
+    };
+    
