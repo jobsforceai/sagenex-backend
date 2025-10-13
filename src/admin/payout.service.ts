@@ -3,7 +3,7 @@ import {
   UNILEVEL_PCTS,
   getTieredROIRate,
   FIRST_DEPOSIT_DIRECT_BONUS_PCT,
-  SUBSEQUENT_DEPOSIT_DIRECT_BONUS_PCT
+  getReinvestmentBonusPct
 } from '../config/payouts';
 import { startOfMonth, endOfMonth, getDaysInMonth, differenceInDays } from 'date-fns';
 import { featureFlags } from '../config/features';
@@ -76,7 +76,7 @@ export const awardDirectBonus = async (depositingUser: IUser, deposit: IOfflineD
     bonusPct = FIRST_DEPOSIT_DIRECT_BONUS_PCT;
   } else {
     recipientId = depositingUser.parentId;
-    bonusPct = SUBSEQUENT_DEPOSIT_DIRECT_BONUS_PCT;
+    bonusPct = getReinvestmentBonusPct(priorVerifiedDeposits);
   }
 
   // No bonus if there's no recipient or if the recipient is the company

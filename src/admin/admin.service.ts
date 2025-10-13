@@ -184,8 +184,17 @@ export const verifyDepositAndActivatePackage = async (depositId: string, adminUs
     const unilevelUpline = await getUplineForUnilevel(user.parentId);
 
     // 3. Award bonuses in real-time
+    const priorVerifiedDeposits = await OfflineDeposit.countDocuments({
+      userId: user.userId,
+      status: 'VERIFIED',
+    });
+
     await awardDirectBonus(user, deposit);
-    await awardUnilevelBonus(unilevelUpline, user, deposit);
+    
+    // Only award unilevel bonus on the very first deposit
+    if (priorVerifiedDeposits === 0) {
+      await awardUnilevelBonus(unilevelUpline, user, deposit);
+    }
 
     // 4. Update deposit with verification info and lineage snapshot for audit
     deposit.status = 'VERIFIED';

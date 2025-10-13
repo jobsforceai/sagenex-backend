@@ -31,3 +31,19 @@ export const UNILEVEL_PCTS = [
   0.03, // Level 5: 3%
   0.02, // Level 6: 2%
 ];
+
+/**
+ * Calculates the tiered reinvestment bonus percentage based on the number of previous deposits.
+ * @param depositCount The number of VERIFIED deposits the user has already made.
+ * @returns The bonus rate as a decimal (e.g., 0.08 for 8%).
+ */
+export function getReinvestmentBonusPct(depositCount: number): number {
+  switch (depositCount) {
+    case 1: return 0.08; // R1: 8%
+    case 2: return 0.06; // R2: 6%
+    case 3: return 0.05; // R3: 5%
+    case 4: return 0.04; // R4: 4%
+    case 5: return 0.03; // R5: 3%
+    default: return 0.02; // R6 and onwards: 2%
+  }
+}
