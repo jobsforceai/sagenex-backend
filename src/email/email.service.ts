@@ -4,6 +4,7 @@ import 'dotenv/config';
 import type { IUser } from '../user/user.model';
 import { getWelcomeEmailHTML } from './templates/welcome.template';
 import { getTransferOtpEmailHTML } from './templates/transfer-otp.template';
+import { generateOtpEmailTemplate } from './templates/email-otp.template';
 
 // Optional Redis cache (recommended). If you already have a Redis client elsewhere, import and reuse it.
 import Redis from 'ioredis';
@@ -149,6 +150,16 @@ export const sendWelcomeEmail = async (user: IUser, originalSponsorId?: string):
     getWelcomeEmailHTML(user, originalSponsorId)
   );
   console.log('Email sent. Message ID:', messageId);
+};
+
+export const sendVerificationOtpEmail = async (user: IUser, otp: string): Promise<void> => {
+  console.log(`Sending verification OTP to ${user.email}...`);
+  const messageId = await sendViaGmailAPI(
+    user.email,
+    'Your Sagenex Verification Code',
+    generateOtpEmailTemplate(otp)
+  );
+  console.log('OTP email sent. Message ID:', messageId);
 };
 
 export const sendTransferOtpEmail = async (user: IUser, otp: string): Promise<void> => {

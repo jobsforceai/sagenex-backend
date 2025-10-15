@@ -31,17 +31,9 @@ services:
     image: mongo:latest
     depends_on:
       - mongodb
-    command: >
-      sh -c "
-        mongosh --host mongodb:27017 --eval '
-          rs.initiate({
-            _id: \"rs0\",
-            members: [
-              { _id: 0, host: \"mongodb:27017\" }
-            ]
-          })
-        '
-      "
+    volumes:
+      - ./mongo-init.sh:/mongo-init.sh
+    command: ["/mongo-init.sh"]
 
   # redis:
   #   image: redis:latest

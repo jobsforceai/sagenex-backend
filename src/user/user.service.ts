@@ -554,7 +554,7 @@ export const getUserProfile = async (userId: string) => {
  * @returns The newly created user document.
  */
 export const createNewUser = async (userData: Partial<IUser> & { sponsorId?: string }) => {
-  const { fullName, email, phone, sponsorId, dateJoined, googleId, profilePicture } = userData;
+  const { fullName, email, phone, sponsorId, dateJoined, googleId, profilePicture, isEmailVerified } = userData;
 
   // 1. Basic Validation
   if (!fullName || !email) {
@@ -595,6 +595,7 @@ export const createNewUser = async (userData: Partial<IUser> & { sponsorId?: str
     phone,
     googleId,
     profilePicture,
+    isEmailVerified, // Set the verification status
     packageUSD: 0,
     originalSponsorId,
     parentId,
@@ -636,6 +637,8 @@ export const getPlacementQueue = async (sponsorId: string) => {
  * @returns The updated user document of the placed user.
  */
 export const placeUser = async (sponsorId: string, newUserId: string, placementParentId: string) => {
+  console.log(`[placeUser] Service called with: sponsorId=${sponsorId}, newUserId=${newUserId}, placementParentId=${placementParentId}`);
+
   // 1. Fetch all necessary documents in parallel
   const newUserPromise = User.findOne({ userId: newUserId });
   const sponsorPromise = User.findOne({ userId: sponsorId });
@@ -648,34 +651,66 @@ export const placeUser = async (sponsorId: string, newUserId: string, placementP
   ]);
 
   // 2. Validate all entities
-  if (!newUser) throw new CustomError('NotFoundError', `User to be placed with ID '${newUserId}' not found.`);
-  if (!sponsor) throw new CustomError('NotFoundError', `Sponsor with ID '${sponsorId}' not found.`);
-  if (!placementParent) throw new CustomError('NotFoundError', `Placement parent with ID '${placementParentId}' not found.`);
+  if (!newUser) {
+    console.error(`[placeUser] Validation failed: User to be placed with ID '${newUserId}' not found.`);
+    throw new CustomError('NotFoundError', `User to be placed with ID '${newUserId}' not found.`);
+  }
+  console.log('[placeUser] Validation passed: New user found.');
+
+  if (!sponsor) {
+    console.error(`[placeUser] Validation failed: Sponsor with ID '${sponsorId}' not found.`);
+    throw new CustomError('NotFoundError', `Sponsor with ID '${sponsorId}' not found.`);
+  }
+  console.log('[placeUser] Validation passed: Sponsor found.');
+
+  if (!placementParent) {
+    console.error(`[placeUser] Validation failed: Placement parent with ID '${placementParentId}' not found.`);
+    throw new CustomError('NotFoundError', `Placement parent with ID '${placementParentId}' not found.`);
+  }
+  console.log('[placeUser] Validation passed: Placement parent found.');
 
   // 3. Perform authorization and business logic checks
   if (newUser.parentId !== null) {
+    console.error(`[placeUser] Logic check failed: User '${newUserId}' has already been placed (parentId: ${newUser.parentId}).`);
     throw new CustomError('ConflictError', 'This user has already been placed.');
   }
+  console.log('[placeUser] Logic check passed: User is not yet placed.');
+
   if (newUser.originalSponsorId !== sponsorId) {
+    console.error(`[placeUser] Auth check failed: Sponsor '${sponsorId}' is not the original sponsor for user '${newUserId}' (originalSponsorId: ${newUser.originalSponsorId}).`);
     throw new CustomError('AuthorizationError', 'You are not the original sponsor for this user.');
   }
+  console.log('[placeUser] Auth check passed: Sponsor is authorized.');
+
   if (newUser.placementDeadline && new Date() > newUser.placementDeadline) {
+    console.error(`[placeUser] Logic check failed: Placement deadline has expired for user '${newUserId}'.`);
     throw new CustomError('ConflictError', 'The 48-hour manual placement window has expired.');
   }
+  console.log('[placeUser] Logic check passed: Placement deadline is valid.');
+
   if (placementParentId !== sponsorId && placementParent.parentId !== sponsorId) {
+    console.error(`[placeUser] Logic check failed: Placement parent '${placementParentId}' is not a direct child of sponsor '${sponsorId}'.`);
     throw new CustomError('ValidationError', 'Invalid placement. Designee must be a direct child of the sponsor.');
   }
+  console.log('[placeUser] Logic check passed: Placement parent is valid.');
 
   // 4. Check capacity of the placement parent
   const childCount = await User.countDocuments({ parentId: placementParentId });
+  console.log(`[placeUser] Capacity check: Placement parent '${placementParentId}' has ${childCount} children.`);
   if (childCount >= featureFlags.directWidthCap) {
+    console.error(`[placeUser] Capacity check failed: Placement parent '${placementParent.fullName}' already has 6 direct members.`);
     throw new CustomError('ConflictError', `'${placementParent.fullName}' already has 6 direct members.`);
   }
+  console.log('[placeUser] Capacity check passed: Placement parent has capacity.');
 
   // 5. Update the new user's placement details
+  console.log(`[placeUser] All checks passed. Updating user '${newUserId}' with parentId '${placementParentId}'.`);
   newUser.parentId = placementParentId;
   newUser.isSplitSponsor = placementParentId !== sponsorId;
   newUser.placementDeadline = undefined; // Remove deadline as they are now placed
+  
+  await newUser.save();
+  console.log(`[placeUser] User '${newUserId}' saved successfully.`);
   
   return newUser;
 };
