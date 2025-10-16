@@ -60,7 +60,4 @@ router.get('/withdrawals', adminController.getWithdrawalRequests);
 router.post('/withdrawals/:withdrawalId/approve', adminController.approveWithdrawal);
 router.post('/withdrawals/:withdrawalId/reject', adminController.rejectWithdrawal);
 
-// Route to manually trigger the auto-placement job
-router.post('/users/run-auto-placement', adminController.runAutoPlacement);
-
 export default router;

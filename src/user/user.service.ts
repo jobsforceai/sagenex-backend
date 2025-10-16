@@ -567,7 +567,6 @@ export const createNewUser = async (userData: Partial<IUser> & { sponsorId?: str
 
   let originalSponsorId: string | null = null;
   let parentId: string | null = null;
-  let placementDeadline: Date | undefined = undefined;
 
   // 2. Resolve Sponsor and Determine Placement
   const effectiveSponsorId = sponsorId || companyConfig.sponsorId;
@@ -584,7 +583,6 @@ export const createNewUser = async (userData: Partial<IUser> & { sponsorId?: str
     }
     originalSponsorId = originalSponsor.userId;
     parentId = null; // Set parent to null to indicate they are in the queue
-    placementDeadline = new Date(Date.now() + 48 * 60 * 60 * 1000); // 48 hours from now
   }
 
   // 3. Create User
@@ -603,7 +601,6 @@ export const createNewUser = async (userData: Partial<IUser> & { sponsorId?: str
     dateJoined: dateJoined ? new Date(dateJoined) : new Date(),
     pvPoints: 0,
     referralCode: nanoid(),
-    placementDeadline,
   });
 
   await newUser.save();
@@ -682,12 +679,6 @@ export const placeUser = async (sponsorId: string, newUserId: string, placementP
   }
   console.log('[placeUser] Auth check passed: Sponsor is authorized.');
 
-  if (newUser.placementDeadline && new Date() > newUser.placementDeadline) {
-    console.error(`[placeUser] Logic check failed: Placement deadline has expired for user '${newUserId}'.`);
-    throw new CustomError('ConflictError', 'The 48-hour manual placement window has expired.');
-  }
-  console.log('[placeUser] Logic check passed: Placement deadline is valid.');
-
   if (placementParentId !== sponsorId && placementParent.parentId !== sponsorId) {
     console.error(`[placeUser] Logic check failed: Placement parent '${placementParentId}' is not a direct child of sponsor '${sponsorId}'.`);
     throw new CustomError('ValidationError', 'Invalid placement. Designee must be a direct child of the sponsor.');
@@ -707,7 +698,6 @@ export const placeUser = async (sponsorId: string, newUserId: string, placementP
   console.log(`[placeUser] All checks passed. Updating user '${newUserId}' with parentId '${placementParentId}'.`);
   newUser.parentId = placementParentId;
   newUser.isSplitSponsor = placementParentId !== sponsorId;
-  newUser.placementDeadline = undefined; // Remove deadline as they are now placed
   
   await newUser.save();
   console.log(`[placeUser] User '${newUserId}' saved successfully.`);

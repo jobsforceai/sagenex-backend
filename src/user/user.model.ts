@@ -21,7 +21,6 @@ export interface IUser extends Document {
   salary: number;
   isPackageActive: boolean;
   kycStatus: KycStatus;
-  placementDeadline?: Date;
   otp?: string;
   otpExpires?: Date;
   otpRequestCount?: number;
@@ -49,7 +48,6 @@ const userSchema = new Schema<IUser>({
   salary: { type: Number, default: 0 },
   isPackageActive: { type: Boolean, default: false },
   kycStatus: { type: String, enum: ['NOT_SUBMITTED', 'PENDING', 'VERIFIED', 'REJECTED'], default: 'NOT_SUBMITTED' },
-  placementDeadline: { type: Date },
   otp: { type: String },
   otpExpires: { type: Date },
   otpRequestCount: { type: Number, default: 0 },

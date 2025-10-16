@@ -11,19 +11,6 @@ import CurrencyRate from '../rates/currency.model';
 import { companyConfig } from '../config/company';
 
 /**
- * Manually triggers the auto-placement job for users whose deadline has passed.
- */
-export const runAutoPlacement = async (req: Request, res: Response) => {
-    try {
-        const result = await adminService.autoPlacePendingUsers();
-        res.status(200).json({ message: 'Auto-placement job completed.', result });
-    } catch (error: any) {
-        console.error('Error running auto-placement job:', error);
-        res.status(500).json({ message: 'Error running auto-placement job.', error: error.message });
-    }
-};
-
-/**
  * Onboards a new user. This is an admin-only action.
  */
 export const onboardUser = async (req: Request, res: Response) => {
