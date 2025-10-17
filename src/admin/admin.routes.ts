@@ -20,6 +20,9 @@ router.get('/payouts', adminController.getMonthlyPayouts);
 // Route to get a list of all users
 router.get('/users', adminController.getAllUsers);
 
+// Route to get a list of all deleted users
+router.get('/users/deleted', adminController.getDeletedUsers);
+
 // Route to get a single user by ID
 router.get('/users/:userId', adminController.getUser);
 

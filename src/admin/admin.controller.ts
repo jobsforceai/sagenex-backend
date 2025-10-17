@@ -162,6 +162,18 @@ export const deleteUser = async (req: Request, res: Response) => {
 };
 
 /**
+ * Gets a list of all deleted users.
+ */
+export const getDeletedUsers = async (req: Request, res: Response) => {
+    try {
+        const deletedUsers = await adminService.getDeletedUsers();
+        res.status(200).json(deletedUsers);
+    } catch (error) {
+        res.status(500).json({ message: 'Error fetching deleted users.', error });
+    }
+};
+
+/**
  * Gets a list of deposits, filterable by status.
  */
 export const getDeposits = async (req: Request, res: Response) => {

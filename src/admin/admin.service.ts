@@ -263,8 +263,10 @@ export const getUserById = async (userId: string): Promise<IUser> => {
 import DeletedUser from './deleted.user.model';
 import Kyc, { KycStatus } from '../kyc/kyc.model';
 
+import { companyConfig } from '../config/company';
+
 /**
- * Deletes a single user by their user ID.
+ * Deletes a single user by their user ID, with safety checks and fund transfers.
  * @param userId The ID of the user to delete.
  * @param adminId The ID of the admin performing the deletion.
  */
@@ -275,17 +277,88 @@ export const deleteUser = async (userId: string, adminId: string): Promise<void>
         throw new CustomError('NotFoundError', `User with ID '${userId}' not found.`);
     }
 
-    // 2. Create a deleted user record
+    // 2. Check if the user has any direct children
+    const childCount = await User.countDocuments({ parentId: userId });
+    if (childCount > 0) {
+        throw new CustomError('ConflictError', `Cannot delete user. User has ${childCount} direct children.`);
+    }
+
+    // 3. Transfer funds if a wallet summary exists
+    const walletSummary = await WalletSummary.findOne({ userId });
+    if (walletSummary) {
+        const { availableToWithdraw, lifetimeEarnings } = walletSummary;
+        const totalFunds = availableToWithdraw; // Or decide if other balances should be included
+
+        if (totalFunds > 0) {
+            const transferMeta = {
+                sourceUserId: userId,
+                sourceUserEmail: user.email,
+                reason: 'User account deletion',
+                transferredBy: adminId,
+                originalAvailableToWithdraw: availableToWithdraw,
+                originalLifetimeEarnings: lifetimeEarnings,
+            };
+
+            // Create a debit entry for the deleted user
+            const debitLedger = new WalletLedger({
+                userId: userId,
+                type: 'FUND_TRANSFER_ON_DELETE',
+                amount: -totalFunds,
+                status: 'POSTED',
+                createdBy: adminId,
+                meta: { ...transferMeta, direction: 'out' },
+            });
+            await debitLedger.save();
+
+            // Create a credit entry for the Segenex root account
+            const creditLedger = new WalletLedger({
+                userId: companyConfig.sponsorId,
+                type: 'FUND_TRANSFER_ON_DELETE',
+                amount: totalFunds,
+                status: 'POSTED',
+                createdBy: adminId,
+                meta: { ...transferMeta, direction: 'in' },
+            });
+            await creditLedger.save();
+
+            // Update the Segenex root account's wallet summary
+            await WalletSummary.findOneAndUpdate(
+                { userId: companyConfig.sponsorId },
+                {
+                    $inc: {
+                        availableToWithdraw: totalFunds,
+                        lifetimeEarnings: totalFunds, // Or decide how to classify this
+                    },
+                    $setOnInsert: { userId: companyConfig.sponsorId },
+                },
+                { upsert: true }
+            );
+        }
+
+        // Delete the user's wallet summary
+        await walletSummary.deleteOne();
+    }
+
+    // 4. Create a deleted user record for archival purposes
     const deletedUser = new DeletedUser({
         ...user.toObject(),
-        _id: undefined, // Let MongoDB generate a new _id
+        _id: undefined, // Let MongoDB generate a new _id for the deleted record
         deletedAt: new Date(),
         deletedBy: adminId,
     });
     await deletedUser.save();
 
-    // 3. Delete the original user
+    // 5. Delete the original user from the main collection
     await user.deleteOne();
+};
+
+/**
+ * Gets a list of all deleted users for archival and review purposes.
+ * @returns A list of deleted user documents.
+ */
+export const getDeletedUsers = async () => {
+    const deletedUsers = await DeletedUser.find().sort({ deletedAt: -1 });
+    return deletedUsers;
 };
 
 // --- KYC Management ---

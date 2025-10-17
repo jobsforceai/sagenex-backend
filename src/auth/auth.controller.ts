@@ -54,8 +54,8 @@ export const checkUser = async (req: Request, res: Response) => {
 export const registerWithEmail = async (req: Request, res: Response) => {
   const { fullName, email, phone, sponsorId } = req.body;
 
-  if (!fullName || !email) {
-    return res.status(400).json({ message: 'Full name and email are required.' });
+  if (!fullName || !email || !phone) {
+    return res.status(400).json({ message: 'Full name, email, and phone are required.' });
   }
 
   try {

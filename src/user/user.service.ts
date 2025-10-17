@@ -548,6 +548,32 @@ export const getUserProfile = async (userId: string) => {
 };
 
 /**
+ * Updates the profile information for a specific user.
+ * @param userId The ID of the user to update.
+ * @param updateData The data to update (fullName, phone).
+ * @returns The updated user document.
+ */
+export const updateUserProfile = async (userId: string, updateData: { fullName?: string; phone?: string }) => {
+  const { fullName, phone } = updateData;
+
+  const user = await User.findOne({ userId });
+  if (!user) {
+    throw new CustomError('NotFoundError', `User with ID '${userId}' not found.`);
+  }
+
+  // Update fields if they are provided
+  if (fullName) {
+    user.fullName = fullName;
+  }
+  if (phone) {
+    user.phone = phone;
+  }
+
+  await user.save();
+  return user;
+};
+
+/**
  * Creates a new user with validation and width-capped unilevel placement logic.
  * This is the single source of truth for creating any new user.
  * @param userData The data for the new user.
@@ -557,8 +583,8 @@ export const createNewUser = async (userData: Partial<IUser> & { sponsorId?: str
   const { fullName, email, phone, sponsorId, dateJoined, googleId, profilePicture, isEmailVerified } = userData;
 
   // 1. Basic Validation
-  if (!fullName || !email) {
-    throw new CustomError('ValidationError', 'Full name and email are required.');
+  if (!fullName || !email || !phone) {
+    throw new CustomError('ValidationError', 'Full name, email, and phone are required.');
   }
   const emailExists = await User.findOne({ email });
   if (emailExists) {
@@ -622,6 +648,7 @@ export const getPlacementQueue = async (sponsorId: string) => {
   const queue = await User.find({
     originalSponsorId: sponsorId,
     parentId: null,
+    isEmailVerified: true, // Only show users who have verified their email
   }).sort({ dateJoined: 1 });
   return queue;
 };
@@ -703,6 +730,46 @@ export const placeUser = async (sponsorId: string, newUserId: string, placementP
   console.log(`[placeUser] User '${newUserId}' saved successfully.`);
   
   return newUser;
+};
+
+/**
+ * Transfers an unplaced user from one sponsor's queue to another's.
+ * @param currentSponsorId The ID of the sponsor initiating the transfer.
+ * @param userIdToTransfer The ID of the user being transferred.
+ * @param newSponsorId The ID of the sponsor to transfer the user to.
+ * @returns The updated user document.
+ */
+export const transferUser = async (currentSponsorId: string, userIdToTransfer: string, newSponsorId: string) => {
+  // 1. Fetch all necessary documents in parallel
+  const userToTransferPromise = User.findOne({ userId: userIdToTransfer });
+  const newSponsorPromise = User.findOne({ userId: newSponsorId });
+
+  const [userToTransfer, newSponsor] = await Promise.all([
+    userToTransferPromise,
+    newSponsorPromise,
+  ]);
+
+  // 2. Validate all entities
+  if (!userToTransfer) {
+    throw new CustomError('NotFoundError', `User to be transferred with ID '${userIdToTransfer}' not found.`);
+  }
+  if (!newSponsor) {
+    throw new CustomError('NotFoundError', `New sponsor with ID '${newSponsorId}' not found.`);
+  }
+
+  // 3. Perform authorization and business logic checks
+  if (userToTransfer.originalSponsorId !== currentSponsorId) {
+    throw new CustomError('AuthorizationError', 'You are not the original sponsor for this user.');
+  }
+  if (userToTransfer.parentId !== null) {
+    throw new CustomError('ConflictError', 'This user has already been placed and cannot be transferred.');
+  }
+
+  // 4. Update the user's originalSponsorId
+  userToTransfer.originalSponsorId = newSponsorId;
+  await userToTransfer.save();
+
+  return userToTransfer;
 };
 
 /**

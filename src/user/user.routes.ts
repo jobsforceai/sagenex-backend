@@ -15,6 +15,9 @@ router.get('/dashboard', userController.getDashboard);
 // Route to get the user's profile
 router.get('/profile', userController.getProfile);
 
+// Route to update the user's profile
+router.patch('/profile', userController.updateProfile);
+
 // Route to get wallet transaction history
 router.get('/wallet', userController.getWalletHistory);
 
@@ -39,6 +42,7 @@ router.get('/payouts', payoutsController.getMonthlyPayouts);
 // Routes for placement queue
 router.get('/team/placement-queue', placementController.getPlacementQueue);
 router.post('/team/place-user', placementController.placeUser);
+router.post('/team/transfer-user', placementController.transferUser);
 
 // Route to get the list of users for fund transfers
 router.get('/transfer-recipients', userController.getTransferRecipients);

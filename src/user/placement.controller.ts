@@ -43,3 +43,32 @@ export const placeUser = async (req: Request, res: Response) => {
     res.status(500).json({ message: 'Error placing user.', error: error.message });
   }
 };
+
+/**
+ * Transfers a user from the sponsor's queue to another sponsor's queue.
+ */
+export const transferUser = async (req: Request, res: Response) => {
+  const sponsor = (req as any).user;
+  const { userIdToTransfer, newSponsorId } = req.body;
+
+  if (!userIdToTransfer || !newSponsorId) {
+    return res.status(400).json({ message: 'userIdToTransfer and newSponsorId are required.' });
+  }
+
+  try {
+    const transferredUser = await userService.transferUser(sponsor.userId, userIdToTransfer, newSponsorId);
+    res.status(200).json({ message: 'User transferred successfully.', user: transferredUser });
+  } catch (error: any) {
+    if (error.name === 'NotFoundError' || error.name === 'ValidationError') {
+      return res.status(400).json({ message: error.message });
+    }
+    if (error.name === 'ConflictError') {
+      return res.status(409).json({ message: error.message });
+    }
+    if (error.name === 'AuthorizationError') {
+      return res.status(403).json({ message: error.message });
+    }
+    console.error(`Error transferring user ${userIdToTransfer} for sponsor ${sponsor.userId}:`, error);
+    res.status(500).json({ message: 'Error transferring user.', error: error.message });
+  }
+};

@@ -10,7 +10,8 @@ export type LedgerEntryType =
   | 'WITHDRAWAL_REQUEST'
   | 'ADJUSTMENT'
   | 'TRANSFER_IN'
-  | 'TRANSFER_OUT';
+  | 'TRANSFER_OUT'
+  | 'FUND_TRANSFER_ON_DELETE';
 
 export type LedgerEntryStatus =
   | 'PENDING'

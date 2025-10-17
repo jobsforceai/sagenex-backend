@@ -138,6 +138,25 @@ export const getLeaderboard = async (req: Request, res: Response) => {
     };
 
 /**
+ * Updates the profile for the logged-in user.
+ */
+export const updateProfile = async (req: Request, res: Response) => {
+  const user = (req as any).user;
+  const { fullName, phone } = req.body;
+
+  try {
+    const updatedUser = await userService.updateUserProfile(user.userId, { fullName, phone });
+    res.status(200).json({ message: 'Profile updated successfully.', user: updatedUser });
+  } catch (error: any) {
+    if (error.name === 'NotFoundError') {
+      return res.status(404).json({ message: error.message });
+    }
+    console.error(`Error updating profile for user ${user.userId}:`, error);
+    res.status(500).json({ message: 'Error updating profile.', error: error.message });
+  }
+};
+
+/**
  * Gets a list of users eligible to receive a fund transfer.
  */
 export const getTransferRecipients = async (req: Request, res: Response) => {
