@@ -354,6 +354,39 @@ export const deleteUser = async (userId: string, adminId: string): Promise<void>
 };
 
 /**
+ * Assigns a user directly under the company root ("SAGENEX-GOLD").
+ * This is a special administrative action with safety checks.
+ * @param userId The ID of the user to assign to the root.
+ * @returns The updated user document.
+ */
+export const assignUserToRoot = async (userId: string) => {
+  // 1. Find the user
+  const user = await User.findOne({ userId });
+  if (!user) {
+    throw new CustomError('NotFoundError', `User with ID '${userId}' not found.`);
+  }
+
+  // 2. Perform critical safety checks
+  const verifiedDeposits = await OfflineDeposit.countDocuments({ userId: user.userId, status: 'VERIFIED' });
+  if (verifiedDeposits > 0) {
+    throw new CustomError('ConflictError', 'Cannot reassign user to root. User has already made a verified deposit.');
+  }
+
+  const childCount = await User.countDocuments({ parentId: userId });
+  if (childCount > 0) {
+    throw new CustomError('ConflictError', `Cannot reassign user to root. User already has ${childCount} direct children.`);
+  }
+
+  // 3. Reassign parent and original sponsor to the company root
+  user.parentId = companyConfig.sponsorId;
+  user.originalSponsorId = companyConfig.sponsorId;
+  user.isSplitSponsor = false; // User is now directly sponsored by the company
+
+  await user.save();
+  return user;
+};
+
+/**
  * Gets a list of all deleted users for archival and review purposes.
  * @returns A list of deleted user documents.
  */

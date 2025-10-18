@@ -146,6 +146,24 @@ export const updateUser = async (req: Request, res: Response) => {
 };
 
 /**
+ * Assigns a user directly to the company root.
+ */
+export const assignUserToRoot = async (req: Request, res: Response) => {
+  try {
+    const updatedUser = await adminService.assignUserToRoot(req.params.userId);
+    res.status(200).json({ message: 'User successfully assigned to root.', user: updatedUser });
+  } catch (error: any) {
+    if (error.name === 'NotFoundError') {
+      return res.status(404).json({ message: error.message });
+    }
+    if (error.name === 'ConflictError') {
+      return res.status(409).json({ message: error.message });
+    }
+    res.status(500).json({ message: 'Error assigning user to root.', error });
+  }
+};
+
+/**
  * Deletes a single user by their ID.
  */
 export const deleteUser = async (req: Request, res: Response) => {

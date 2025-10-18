@@ -32,6 +32,9 @@ router.get('/users/:userId/children', adminController.getDirectChildren);
 // Route to update a single user by ID
 router.patch('/users/:userId', adminController.updateUser);
 
+// Route to assign a user to the company root
+router.post('/users/:userId/assign-to-root', adminController.assignUserToRoot);
+
 // Route to delete a single user by ID
 router.delete('/users/:userId', adminController.deleteUser);
 
