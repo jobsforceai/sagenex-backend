@@ -12,6 +12,7 @@ import Collector from '../collector/collector.model';
 import Admin, { IAdmin } from './admin.model';
 import { awardDirectBonus, awardUnilevelBonus, getUplineForUnilevel } from './payout.service';
 import * as userService from '../user/user.service';
+import * as nowpaymentsService from '../services/nowpayments.service';
 
 /**
  * Onboards a new user with width-capped unilevel placement logic.
@@ -461,7 +462,7 @@ export const getWithdrawalRequests = async (status: 'PENDING' | 'PAID' | 'REJECT
 };
 
 /**
- * Approves a withdrawal request.
+ * Approves a withdrawal request, initiating a payout via NOWPayments.
  * @param withdrawalId The ID of the withdrawal ledger entry.
  * @param adminId The ID of the admin approving the request.
  * @returns The updated ledger entry.
@@ -475,8 +476,26 @@ export const approveWithdrawal = async (withdrawalId: string, adminId: string) =
     throw new CustomError('ConflictError', `Cannot approve request. Status is '${withdrawal.status}'.`);
   }
 
+  const user = await User.findOne({ userId: withdrawal.userId });
+  if (!user || !user.usdtTrc20Address) {
+      throw new CustomError('ValidationError', `User '${withdrawal.userId}' has not provided a withdrawal address.`);
+  }
+
+  // Amount is negative in the ledger, so make it positive for the payout
+  const payoutAmount = -withdrawal.amount;
+
+  // Initiate payout via NOWPayments
+  const payoutResult = await nowpaymentsService.createPayout(user.usdtTrc20Address, payoutAmount);
+
+  // Update the withdrawal record with the payout details
   withdrawal.status = 'PAID';
-  withdrawal.meta = { ...withdrawal.meta, processedBy: adminId, processedAt: new Date() };
+  withdrawal.meta = {
+    ...withdrawal.meta,
+    processedBy: adminId,
+    processedAt: new Date(),
+    nowPaymentsPayoutId: payoutResult.id, // Assuming the payout result has an 'id'
+    transactionId: payoutResult.batch_withdrawal.tx_id, // Assuming the txid is here
+  };
   await withdrawal.save();
 
   return withdrawal;

@@ -6,6 +6,13 @@ import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
 import { sendTransferOtpEmail } from '../email/email.service';
 import { customAlphabet } from 'nanoid';
+import CryptoDeposit, { ICryptoDeposit } from '../deposits/crypto.deposit.model';
+import * as nowpaymentsService from '../services/nowpayments.service';
+import * as adminService from '../admin/admin.service'; // For reusing the activation logic
+import { IUser } from '../user/user.model';
+import { getUplineForUnilevel } from '../admin/payout.service';
+import { awardDirectBonus, awardUnilevelBonus } from '../admin/payout.service';
+import { IOfflineDeposit } from '../deposits/offline.deposit.model';
 
 /**
  * Gets the complete wallet data for a specific user.
@@ -197,4 +204,133 @@ export const executeTransfer = async (senderId: string, recipientId: string, amo
   } finally {
     session.endSession();
   }
+};
+
+// --- Crypto Deposits (NOWPayments) ---
+
+/**
+ * Creates a crypto deposit invoice via NOWPayments and records it in the database.
+ * @param userId The ID of the user making the deposit.
+ * @param amount The amount in USDT.
+ * @returns The invoice data from NOWPayments to be sent to the frontend.
+ */
+export const createCryptoDepositInvoice = async (userId: string, amount: number) => {
+  const MINIMUM_DEPOSIT_USD = 15;
+
+  if (amount < MINIMUM_DEPOSIT_USD) {
+    throw new CustomError('ValidationError', `Deposit amount must be at least $${MINIMUM_DEPOSIT_USD}.`);
+  }
+  if (amount <= 0) {
+    throw new CustomError('ValidationError', 'Deposit amount must be positive.');
+  }
+
+  // 1. Create a pending deposit record in our database first
+  const pendingDeposit = new CryptoDeposit({
+    userId,
+    amountUSDT: amount,
+    status: 'PENDING',
+    // Temporary placeholder for the payment ID
+    nowPaymentsPaymentId: `TEMP_${new mongoose.Types.ObjectId().toString()}`,
+  });
+  await pendingDeposit.save();
+
+  try {
+    // 2. Create the invoice with NOWPayments, using our internal record's ID as the order_id
+    const invoice = await nowpaymentsService.createPaymentInvoice(amount, (pendingDeposit._id as any).toString());
+
+    // 3. Update our record with the actual payment ID from NOWPayments
+    pendingDeposit.nowPaymentsPaymentId = invoice.payment_id;
+    await pendingDeposit.save();
+
+    return invoice;
+  } catch (error) {
+    // If invoice creation fails, mark our internal record as failed
+    pendingDeposit.status = 'FAILED';
+    await pendingDeposit.save();
+    throw error; // Re-throw the error to be handled by the controller
+  }
+};
+
+/**
+ * Processes a confirmed crypto deposit after receiving a webhook notification.
+ * This function mirrors the logic of `adminService.verifyDepositAndActivatePackage`.
+ * @param depositId The internal ID of the crypto deposit record (from `order_id`).
+ * @param nowPaymentsPaymentId The payment ID from NOWPayments for verification.
+ */
+export const processCryptoDeposit = async (depositId: string, nowPaymentsPaymentId: string) => {
+  const deposit = await CryptoDeposit.findById(depositId);
+
+  if (!deposit) {
+    throw new CustomError('NotFoundError', `Crypto deposit with internal ID '${depositId}' not found.`);
+  }
+  if (deposit.status !== 'PENDING') {
+    console.warn(`Webhook for a non-pending crypto deposit received. Status: ${deposit.status}`);
+    return; // Avoid reprocessing
+  }
+  if (deposit.nowPaymentsPaymentId !== nowPaymentsPaymentId) {
+      throw new CustomError('ValidationError', 'NOWPayments Payment ID mismatch.');
+  }
+
+  // This logic is adapted from `adminService.verifyDepositAndActivatePackage`
+  const user = await User.findOne({ userId: deposit.userId });
+  if (!user) {
+    throw new CustomError('NotFoundError', `User with ID '${deposit.userId}' not found.`);
+  }
+
+  // Note: We create a temporary object that mimics IOfflineDeposit for the bonus functions
+  const depositForBonus: Partial<IOfflineDeposit> = {
+    _id: (deposit._id as any),
+    amountUSDT: deposit.amountUSDT,
+    userId: user.userId,
+  };
+
+  await awardDirectBonus(user, depositForBonus as IOfflineDeposit);
+  
+  const priorVerifiedDeposits = await CryptoDeposit.countDocuments({ userId: user.userId, status: 'CONFIRMED' });
+  if (priorVerifiedDeposits === 0) {
+    const unilevelUpline = await getUplineForUnilevel(user.parentId);
+    await awardUnilevelBonus(unilevelUpline, user, depositForBonus as IOfflineDeposit);
+  }
+
+  deposit.status = 'CONFIRMED';
+  deposit.confirmedAt = new Date();
+  await deposit.save();
+
+  user.packageUSD += deposit.amountUSDT;
+  user.pvPoints = user.packageUSD * 0.1;
+  if (!user.isPackageActive) {
+    user.isPackageActive = true;
+  }
+  await user.save();
+
+  const activationLedger = new WalletLedger({
+    userId: user.userId,
+    type: 'PACKAGE_ACTIVATION',
+    amount: deposit.amountUSDT,
+    status: 'POSTED',
+    createdBy: 'SYSTEM_NOWPAYMENTS',
+    meta: {
+      cryptoDepositId: (deposit._id as any).toString(),
+      nowPaymentsPaymentId,
+    },
+  });
+  await activationLedger.save();
+
+  await WalletSummary.findOneAndUpdate(
+      { userId: user.userId },
+      { $setOnInsert: { userId: user.userId } },
+      { upsert: true }
+  );
+};
+
+/**
+ * Updates the status of a crypto deposit for failed, refunded, or expired payments.
+ * @param depositId The internal ID of the crypto deposit record.
+ * @param status The new status from the webhook.
+ */
+export const updateCryptoDepositStatus = async (depositId: string, status: 'FAILED' | 'EXPIRED') => {
+  await CryptoDeposit.updateOne(
+    { _id: depositId, status: 'PENDING' }, // Ensure we only update pending deposits
+    { $set: { status } }
+  );
 };

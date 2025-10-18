@@ -142,10 +142,10 @@ export const getLeaderboard = async (req: Request, res: Response) => {
  */
 export const updateProfile = async (req: Request, res: Response) => {
   const user = (req as any).user;
-  const { fullName, phone } = req.body;
+  const { fullName, phone, usdtTrc20Address } = req.body;
 
   try {
-    const updatedUser = await userService.updateUserProfile(user.userId, { fullName, phone });
+    const updatedUser = await userService.updateUserProfile(user.userId, { fullName, phone, usdtTrc20Address });
     res.status(200).json({ message: 'Profile updated successfully.', user: updatedUser });
   } catch (error: any) {
     if (error.name === 'NotFoundError') {

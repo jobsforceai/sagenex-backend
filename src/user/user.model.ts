@@ -27,6 +27,7 @@ export interface IUser extends Document {
   otpRequestTimestamp?: Date;
   failedOtpAttempts?: number;
   otpLockoutExpires?: Date;
+  usdtTrc20Address?: string;
 }
 
 const userSchema = new Schema<IUser>({
@@ -54,6 +55,7 @@ const userSchema = new Schema<IUser>({
   otpRequestTimestamp: { type: Date },
   failedOtpAttempts: { type: Number, default: 0 },
   otpLockoutExpires: { type: Date },
+  usdtTrc20Address: { type: String, trim: true },
 }, { timestamps: true });
 
 // Auto-increment userId before saving a new user

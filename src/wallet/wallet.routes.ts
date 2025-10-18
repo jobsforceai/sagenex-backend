@@ -13,6 +13,9 @@ router.get('/', walletController.getWallet);
 // Route to create a new withdrawal request
 router.post('/request-withdrawal', walletController.requestWithdrawal);
 
+// Route for creating a crypto deposit invoice
+router.post('/deposits/crypto', walletController.createCryptoDeposit);
+
 // Routes for user-to-user transfers
 router.post('/transfer/send-otp', walletController.sendTransferOtp);
 router.post('/transfer/execute', walletController.executeTransfer);

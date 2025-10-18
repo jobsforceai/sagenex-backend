@@ -550,11 +550,11 @@ export const getUserProfile = async (userId: string) => {
 /**
  * Updates the profile information for a specific user.
  * @param userId The ID of the user to update.
- * @param updateData The data to update (fullName, phone).
+ * @param updateData The data to update (fullName, phone, usdtTrc20Address).
  * @returns The updated user document.
  */
-export const updateUserProfile = async (userId: string, updateData: { fullName?: string; phone?: string }) => {
-  const { fullName, phone } = updateData;
+export const updateUserProfile = async (userId: string, updateData: { fullName?: string; phone?: string; usdtTrc20Address?: string }) => {
+  const { fullName, phone, usdtTrc20Address } = updateData;
 
   const user = await User.findOne({ userId });
   if (!user) {
@@ -567,6 +567,10 @@ export const updateUserProfile = async (userId: string, updateData: { fullName?:
   }
   if (phone) {
     user.phone = phone;
+  }
+  if (usdtTrc20Address) {
+    // Optional: Add validation for the address format here if needed
+    user.usdtTrc20Address = usdtTrc20Address;
   }
 
   await user.save();
