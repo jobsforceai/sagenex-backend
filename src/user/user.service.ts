@@ -181,17 +181,18 @@ export const getDirectChildren = async (userIdentifier: string) => {
   import OfflineDeposit from '../deposits/offline.deposit.model';
   
   /**
-   * Updates a user's details with validation for parent and original sponsor changes.
+   * Updates a user's details. Admin-only function with full control over placement.
    * @param userId The ID of the user to update.
-   * @param updateData The data to update.
+   * @param updateData The data to update, including parent and original sponsor.
    * @returns The updated user document.
    */
   export const updateUser = async (userId: string, updateData: {
     fullName?: string;
     phone?: string;
     parentId?: string;
+    originalSponsorId?: string;
   }) => {
-    const { fullName, phone, parentId } = updateData;
+    const { fullName, phone, parentId, originalSponsorId } = updateData;
   
     // 1. Find the user
     const user = await User.findOne({ userId });
@@ -199,51 +200,48 @@ export const getDirectChildren = async (userIdentifier: string) => {
       throw new CustomError('NotFoundError', `User with ID '${userId}' not found.`);
     }
   
-    // 2. Handle Parent ID change with advanced validation
+    // 2. Handle Parent ID change
     if (parentId && parentId !== user.parentId) {
-      // 2a. Validate the new parent first
-      const newParent = await User.findOne({ userId: parentId });
-      if (!newParent) {
-        throw new CustomError('NotFoundError', `New parent with ID '${parentId}' not found.`);
-      }
-  
-      // 2b. Check if the new parent has capacity
-      const parentChildCount = await User.countDocuments({ parentId: newParent.userId });
-      if (parentChildCount >= 6) { // Assuming directWidthCap is 6
-        throw new CustomError('ConflictError', `New parent '${newParent.fullName}' has reached their direct capacity.`);
-      }
-  
-      // 2c. Logic for changing originalSponsorId (Full Reassignment)
-      if (user.originalSponsorId === user.parentId) {
-        // SAFETY CHECK: This is only allowed if the user has no financial history.
-        const verifiedDeposits = await OfflineDeposit.countDocuments({ userId: user.userId, status: 'VERIFIED' });
-        if (verifiedDeposits > 0) {
-          throw new CustomError('ConflictError', 'Cannot change original sponsor after a deposit has been verified.');
+      // Allow assigning to the company root
+      if (parentId !== companyConfig.sponsorId) {
+        const newParent = await User.findOne({ userId: parentId });
+        if (!newParent) {
+          throw new CustomError('NotFoundError', `New parent with ID '${parentId}' not found.`);
         }
-        // If safe, reassign both original sponsor and parent.
-        user.originalSponsorId = parentId;
-        user.parentId = parentId;
-      } 
-      // 2d. Logic for changing parentId only (Placement Change)
-      else {
-        // CRITICAL: Check if the user has any children before changing placement.
-        const childCount = await User.countDocuments({ parentId: user.userId });
-        if (childCount > 0) {
-          throw new CustomError('ConflictError', 'Cannot change parent: User already has direct children.');
+        // Check capacity of the new parent
+        const parentChildCount = await User.countDocuments({ parentId: newParent.userId });
+        if (parentChildCount >= featureFlags.directWidthCap) {
+          throw new CustomError('ConflictError', `New parent '${newParent.fullName}' has reached their direct capacity.`);
         }
-        user.parentId = parentId;
       }
+      user.parentId = parentId;
     }
   
-    // 3. Update other fields if provided
+    // 3. Handle Original Sponsor ID change
+    if (originalSponsorId && originalSponsorId !== user.originalSponsorId) {
+        // Allow assigning to the company root
+        if (originalSponsorId !== companyConfig.sponsorId) {
+            const newSponsor = await User.findOne({ userId: originalSponsorId });
+            if (!newSponsor) {
+                throw new CustomError('NotFoundError', `New original sponsor with ID '${originalSponsorId}' not found.`);
+            }
+        }
+        user.originalSponsorId = originalSponsorId;
+    }
+
+    // 4. Update other fields if provided
     if (fullName) {
       user.fullName = fullName;
     }
     if (phone) {
       user.phone = phone;
     }
+
+    // 5. Recalculate isSplitSponsor flag
+    // A user is a split sponsor case if their parent is not their original sponsor.
+    user.isSplitSponsor = user.parentId !== user.originalSponsorId;
   
-    // 4. Save and return the updated user
+    // 6. Save and return the updated user
     await user.save();
     return user;
   };
